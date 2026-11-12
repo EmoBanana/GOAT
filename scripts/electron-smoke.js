@@ -330,21 +330,50 @@ try {
     assert.match(chat.body.messages.at(-1).content, /highlighted this part of the screen \(200×150 points\)/);
   });
 
-  await check('tracking samples allowlisted windows; stopping shows and approves the timesheet', async () => {
-    await app.evaluate(() => globalThis.__goatTest.setFakeWindow('Revit|ALP-GAM-ZZ-XX-M3-S-0001.rvt'));
-    await app.evaluate(() => globalThis.__goatTest.toggleTracking());
-    await until(() => page.evaluate(() => document.getElementById('goat-cursor').classList.contains('tracking')), 'the red dot');
-    await sleep(1700); // about 8 samples at 0.2 s
-    await app.evaluate(() => globalThis.__goatTest.toggleTracking());
-    await page.waitForSelector('.ts-table', { state: 'visible' });
-    assert.match(await page.locator('.ts-table').innerText(), /ALPHA/);
-    assert.equal(await page.evaluate(() => document.getElementById('goat-cursor').classList.contains('tracking')), false);
-    await page.click('[data-action="approve"]');
-    await until(() => page.evaluate(() => document.querySelector('.ts-status')?.textContent === 'Approved'), 'the approval');
-    const approved = fs.readdirSync(path.join(srv.dataDir, 'timesheets', 'e2e-tester'));
-    assert.equal(approved.length, 1);
-    await page.click('[data-action="close"]');
-    await app.evaluate(() => globalThis.__goatTest.setFakeWindow('Google Chrome|Forma Build - Issues'));
+  await check('tracking: Canva, then a form in ACC with a GOAT guide, become timed activities; stopping shows them; approve', async () => {
+    const before = ollama.state.reply;
+    // The mock model writes "aN: Worked in <site or app>." for each activity it's given.
+    ollama.state.reply = (body) =>
+      /tracked screen time/.test(body.messages?.[0]?.content || '')
+        ? [...String(body.messages.at(-1).content).matchAll(/- id (a\d+): ([^,.\n]+)(?:, website ([a-z0-9.-]+?)\.(?=\s|$))?/gm)].map((m) => `${m[1]}: Worked in ${m[3] || m[2]}.`).join('\n')
+        : before(body);
+    try {
+      await app.evaluate(() => globalThis.__goatTest.setFakeWindow('Google Chrome|GOAT pitch - Presentation|https://www.canva.com/design/DAF1/edit?ui=1'));
+      await app.evaluate(() => globalThis.__goatTest.toggleTracking());
+      await until(() => page.evaluate(() => document.getElementById('goat-cursor').classList.contains('tracking')), 'the red dot');
+      await sleep(1200); // about 6 samples at 0.2 s
+      await app.evaluate(() => globalThis.__goatTest.setFakeWindow('Google Chrome|Forms - ALPHA Viaduct|https://acc.autodesk.com/build/forms/projects/1?x=1'));
+      await sleep(600);
+      await askThroughMain('how do I log an issue?'); // a guide plays while tracking
+      await until(() => page.evaluate(() => window.GOATUI.state().guide?.landed === true), 'the guide to play');
+      await page.keyboard.press('Escape');
+      await sleep(800);
+      await app.evaluate(() => globalThis.__goatTest.toggleTracking());
+      await page.waitForSelector('.ts-act', { state: 'visible' });
+      assert.equal(await page.evaluate(() => document.getElementById('goat-cursor').classList.contains('tracking')), false);
+      const acts = await page.evaluate(() => [...document.querySelectorAll('.ts-act')].map((li) => [li.querySelector('.ts-when').textContent, li.querySelector('.ts-what').textContent, li.querySelector('.ts-code').textContent]));
+      assert.deepEqual(acts.map(([, what, code]) => [what, code]), [
+        ['Worked in canva.com.', 'GOAT'],
+        ['Worked in acc.autodesk.com, with a GOAT guide.', 'ALPHA'],
+      ]);
+      for (const [when] of acts) assert.match(when, /^\d\d:\d\d(–\d\d:\d\d)?$/);
+      assert.match(await page.locator('.ts-table').innerText(), /ALPHA[\s\S]*GOAT|GOAT[\s\S]*ALPHA/);
+      const dayDir = path.join(srv.dataDir, 'activity', 'e2e-tester');
+      const stored = fs.readdirSync(dayDir).filter((f) => f.endsWith('.jsonl')).map((f) => fs.readFileSync(path.join(dayDir, f), 'utf8')).join('');
+      assert.match(stored, /"site":"canva\.com"/);
+      assert.match(stored, /"kind":"guide","guide":"Log an issue in Forma Build","app":"Google Chrome"/);
+      assert.doesNotMatch(stored, /DAF1|ui=1|x=1|build\/forms|https?:/, 'site names only, never addresses');
+      await page.screenshot({ path: shot('electron-timesheet.png') });
+      await page.click('[data-action="approve"]');
+      await until(() => page.evaluate(() => document.querySelector('.ts-status')?.textContent === 'Approved'), 'the approval');
+      const approved = fs.readdirSync(path.join(srv.dataDir, 'timesheets', 'e2e-tester'));
+      assert.equal(approved.length, 1);
+      assert.equal(JSON.parse(fs.readFileSync(path.join(srv.dataDir, 'timesheets', 'e2e-tester', approved[0]), 'utf8')).activities.length, 2);
+      await page.click('#goat-panel [data-action="close"]'); // not the Close of the guide bubble above, now hidden
+    } finally {
+      ollama.state.reply = before;
+      await app.evaluate(() => globalThis.__goatTest.setFakeWindow('Google Chrome|Forma Build - Issues'));
+    }
   });
 
   await check('asks are paid with x402 through the wallet abstraction; top up and upgrade to Pro', async () => {
@@ -369,7 +398,7 @@ try {
     const me = await srv.request('GET', '/api/me', { user: 'e2e-tester' });
     assert.equal(me.body.tier, 'pro');
     await page.screenshot({ path: shot('electron-wallet.png') });
-    await page.click('[data-action="close"]');
+    await page.click('#goat-panel [data-action="close"]'); // a hidden guide bubble keeps its own Close
   });
 
   await check('voice (Pro): hold to talk, transcribe through main, play a guide; a screen question carries the screen', async () => {

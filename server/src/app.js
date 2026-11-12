@@ -82,7 +82,7 @@ export function createApp({ config, guides, docs, llm, users, assist, mcp, proje
     }
   });
 
-  if (projects && activity) mountTimesheet(app, { projects, activity });
+  if (projects && activity) mountTimesheet(app, { projects, activity, llm, config, logger });
   mountWallet(app, { config, users, payments, topups });
   mountVoice(app, { config, users, llm, projects });
   if (chats) mountChats(app, { chats });

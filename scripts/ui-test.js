@@ -482,7 +482,9 @@ await check('tracking: a red dot rides with the cursor while tracking is on', as
   assert.equal(await dotShown(), false);
 });
 
-await check("timesheet: today's projects, Approve and Export CSV", async () => {
+await check('timesheet: opens at once, then the day as activities with times, by project, Approve and Export CSV', async () => {
+  const at = (h, m) => new Date(2026, 10, 12, h, m).toISOString();
+  const act = (key, start, end, minutes, site, code, summary, guides = []) => ({ key, start, end, minutes, app: 'Google Chrome', site, titles: [`${site} page`], guides, code, name: code, summary, described: true });
   const sheet = {
     user: 'ui-tester',
     date: '2026-11-12',
@@ -494,12 +496,40 @@ await check("timesheet: today's projects, Approve and Export CSV", async () => {
     unassignedMinutes: 6,
     idleMinutes: 12,
     approved: false,
+    activities: [
+      act('a', at(9, 2), at(9, 32), 30, 'canva.com', 'GOAT', 'Worked on the GOAT pitch presentation in Canva.'),
+      act('b', at(9, 32), at(9, 32), 0.5, 'google.com', null, 'Searched for the Gamuda logo on Google.'),
+      act('c', at(9, 33), at(10, 48), 75, 'acc.autodesk.com', 'ALPHA', 'Created a form in Autodesk Construction Cloud with a GOAT guide.', ['Create a form']),
+    ],
   };
   await setReply('approveTimesheet', { ...sheet, approved: { at: '2026-11-12T09:00:00Z' } });
   await setReply('exportTimesheetCsv', { ok: true, url: 'http://127.0.0.1:8402/api/timesheet.csv?date=2026-11-12&user=ui-tester' });
   await page.evaluate(() => (window.__calls.length = 0));
+
+  // Closed while it loads, it stays closed when the day arrives.
+  await emit({ type: 'open-timesheet', loading: true });
+  await page.waitForSelector('.ts-loading', { state: 'visible' });
+  await page.keyboard.press('Escape');
   await emit({ type: 'open-timesheet', timesheet: sheet });
-  await page.waitForSelector('.ts-table', { state: 'visible' });
+  await page.waitForTimeout(100);
+  assert.equal((await ui()).panel, null);
+
+  // Main opens the panel at once, then sends the day once its lines are written.
+  await emit({ type: 'open-timesheet', loading: true });
+  await page.waitForSelector('.ts-loading', { state: 'visible' });
+  assert.match(await page.locator('.ts-loading').innerText(), /Writing up your day/);
+  assert.equal(await page.locator('[data-action="approve"]').isDisabled(), true);
+  await shot('ui-11a-timesheet-loading');
+  await emit({ type: 'open-timesheet', timesheet: sheet });
+  await page.waitForSelector('.ts-act', { state: 'visible' });
+  assert.equal(await page.locator('.ts-loading').isHidden(), true);
+  const acts = await page.evaluate(() => [...document.querySelectorAll('.ts-act')].map((li) => [...li.children].map((c) => c.textContent)));
+  assert.deepEqual(acts, [
+    ['09:02–09:32', 'Worked on the GOAT pitch presentation in Canva.', 'GOAT', '30 min'],
+    ['09:32', 'Searched for the Gamuda logo on Google.', '—', '30 s'],
+    ['09:33–10:48', 'Created a form in Autodesk Construction Cloud with a GOAT guide.', 'ALPHA', '1 h 15 min'],
+  ]);
+  assert.equal(await page.locator('.ts-act').first().getAttribute('title'), 'canva.com\ncanva.com page', 'what GOAT saw, on hover');
   const rows = await page.evaluate(() => [...document.querySelectorAll('.ts-table tbody tr')].map((tr) => [...tr.cells].map((c) => c.textContent)));
   assert.deepEqual(rows, [
     ['ALPHASample: Alpha Viaduct', '1.25', 'Google Chrome, Revit'],
@@ -514,6 +544,7 @@ await check("timesheet: today's projects, Approve and Export CSV", async () => {
   await until(async () => (await page.locator('.ts-status').innerText()) === 'Approved', 'the approved status');
   assert.deepEqual((await calls('approveTimesheet'))[0].args, ['2026-11-12']);
   assert.equal(await page.locator('[data-action="approve"]').innerText(), 'Approve again');
+  assert.equal(await page.locator('.ts-act').count(), 3, 'the activities stay after approving');
   await page.click('[data-action="csv"]');
   assert.deepEqual((await until(async () => {
     const c = await calls('exportTimesheetCsv');
@@ -521,7 +552,7 @@ await check("timesheet: today's projects, Approve and Export CSV", async () => {
   }, 'the CSV export'))[0].args, ['2026-11-12']);
   await page.click('[data-action="close"]');
   assert.equal((await ui()).panel, null);
-  await emit({ type: 'open-timesheet', timesheet: { ...sheet, entries: [], unassignedMinutes: 0, totalMinutes: 0, idleMinutes: 0 } });
+  await emit({ type: 'open-timesheet', timesheet: { ...sheet, entries: [], activities: [], unassignedMinutes: 0, totalMinutes: 0, idleMinutes: 0 } });
   await page.waitForSelector('.ts-empty', { state: 'visible' });
   assert.match(await page.locator('.ts-empty').innerText(), /Nothing tracked yet today/);
   assert.equal(await page.locator('[data-action="approve"]').isDisabled(), true);

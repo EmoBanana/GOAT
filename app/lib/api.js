@@ -84,8 +84,9 @@ export function createApi({ baseUrl, userId, walletAddress = null, fetchImpl = g
     draftGuide: (text) => request('POST', '/api/guides/draft', { text }, 120_000),
     timesheetConfig: () => request('GET', '/api/timesheet/config', undefined, 5000),
     postActivity: (samples) => request('POST', '/api/activity', { samples }, 10_000),
-    timesheet: (date) => request('GET', `/api/timesheet?date=${encodeURIComponent(date)}`, undefined, 10_000),
-    approveTimesheet: (date) => request('POST', '/api/timesheet/approve', { date }, 10_000),
+    // The model writes the day's activity lines the first time (a few seconds), so these wait longer.
+    timesheet: (date) => request('GET', `/api/timesheet?date=${encodeURIComponent(date)}`, undefined, 60_000),
+    approveTimesheet: (date) => request('POST', '/api/timesheet/approve', { date }, 60_000),
     wallet: () => request('GET', '/api/wallet', undefined, 8000),
     topup: (myr) => request('POST', '/api/wallet/topup', { myr }, 30_000),
     upgradePro: () => request('POST', '/api/pro/upgrade', {}, 30_000),

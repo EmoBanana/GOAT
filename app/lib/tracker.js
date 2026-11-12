@@ -1,10 +1,11 @@
 // Timesheet tracker (main process). Off until Ctrl+Option+T. While on, it samples the frontmost
 // window every interval, keeps only allowlisted apps, flags idle time, sends batches to the
-// server, flushes on stop and requeues anything the server didn't take.
+// server, flushes on stop and requeues anything the server didn't take. A browser sample carries
+// its site name (canva.com), never the address. note() adds a GOAT guide used meanwhile.
 const MAX_QUEUE = 2000;
 
 export function createTracker({
-  sample, // (allowlist) => Promise<{ app, title, url?, pid } | null>
+  sample, // (allowlist) => Promise<{ app, title, site?, pid } | null>
   send, // (samples) => Promise<{ stored } | { error }>
   getConfig, // () => Promise<{ trackedApps }>
   intervalMs = 10_000,
@@ -51,7 +52,7 @@ export function createTracker({
         ts: new Date(now()).toISOString(),
         app: s.app,
         title: s.title || '',
-        ...(s.url ? { url: s.url } : {}),
+        ...(s.site ? { site: s.site } : {}),
         idle: idleSeconds() >= idleSec,
         sec: intervalMs / 1000,
       });
@@ -74,6 +75,15 @@ export function createTracker({
     return true;
   }
 
+  // A GOAT guide played while tracking (event: { guide, app }): it rides with the next batch, and
+  // the day's line for that stretch says the task was done with it. Ignored when not tracking.
+  function note(event) {
+    const guide = String(event?.guide || '').trim();
+    if (!timer || !guide) return false;
+    queue.push({ ts: new Date(now()).toISOString(), kind: 'guide', guide: guide.slice(0, 120), ...(event.app ? { app: String(event.app) } : {}) });
+    return true;
+  }
+
   async function stop() {
     if (!timer) return null;
     clearTimer(timer);
@@ -87,6 +97,7 @@ export function createTracker({
     stop,
     tick,
     flush,
+    note,
     get tracking() {
       return timer !== null;
     },

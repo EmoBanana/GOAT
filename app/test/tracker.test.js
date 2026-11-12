@@ -109,3 +109,25 @@ test('stop flushes what is queued; failed sends are kept and retried', async () 
   assert.equal(h.sent.flat().length, 2);
   assert.equal(h.tracker.queued, 0);
 });
+
+test('a browser sample carries its site name, never the address', async () => {
+  const h = harness();
+  await h.tracker.start();
+  h.show({ app: 'Google Chrome', title: 'GOAT pitch - Presentation', site: 'canva.com', url: 'https://www.canva.com/design/x/edit?y=1', pid: 8 });
+  await h.tick();
+  await h.tracker.stop();
+  const sample = h.sent.flat().at(-1);
+  assert.equal(sample.site, 'canva.com');
+  assert.equal('url' in sample, false);
+});
+
+test('note() adds a GOAT guide used while tracking, and nothing when tracking is off', async () => {
+  const h = harness();
+  assert.equal(h.tracker.note({ guide: 'Create a form', app: 'Google Chrome' }), false, 'not tracking');
+  await h.tracker.start();
+  assert.equal(h.tracker.note({ guide: '  ' }), false);
+  assert.equal(h.tracker.note({ guide: 'Create a form', app: 'Google Chrome' }), true);
+  await h.tracker.stop();
+  assert.deepEqual(h.sent.flat().filter((s) => s.kind), [{ ts: '2026-11-12T03:00:00.000Z', kind: 'guide', guide: 'Create a form', app: 'Google Chrome' }]);
+  assert.equal(h.tracker.note({ guide: 'Later' }), false, 'off again');
+});

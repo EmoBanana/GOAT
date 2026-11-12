@@ -7,6 +7,7 @@ export function summarize(records) {
   let unassigned = 0;
   let idle = 0;
   for (const r of records) {
+    if (r.kind) continue; // GOAT guides used: notes for the activity lines, not time
     const sec = Number(r.sec) > 0 ? Number(r.sec) : 10;
     if (r.idle) {
       idle += sec;
@@ -34,12 +35,18 @@ const cell = (value) => {
   return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
 
-export function toCsv({ user, date, summary, approved }) {
+// The laptop's local time, HH:MM.
+export function clock(iso) {
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+// One row per activity, in order: when, how long, the project and what was done.
+export function toCsv({ user, date, activities, approved }) {
   const yes = approved ? 'yes' : 'no';
-  const rows = [['Date', 'User', 'Project code', 'Project', 'Hours', 'Minutes', 'Apps', 'Approved']];
-  for (const e of summary.entries) rows.push([date, user, e.code, e.name, e.hours.toFixed(2), e.minutes, e.apps.join('; '), yes]);
-  if (summary.unassignedMinutes > 0) {
-    rows.push([date, user, '', 'Unassigned', (summary.unassignedMinutes / 60).toFixed(2), summary.unassignedMinutes, '', yes]);
+  const rows = [['Date', 'User', 'Start', 'End', 'Minutes', 'Project code', 'Project', 'Activity', 'App', 'Website', 'Approved']];
+  for (const a of activities) {
+    rows.push([date, user, clock(a.start), clock(a.end), a.minutes, a.code || '', a.code ? a.name : 'Unassigned', a.summary, a.app, a.site || '', yes]);
   }
   return `${rows.map((r) => r.map(cell).join(',')).join('\r\n')}\r\n`;
 }

@@ -491,7 +491,7 @@
 
   // ---------- moving panels ----------
   // Drag a panel by any empty part of it; each panel opens where you last left it.
-  const NO_DRAG = 'button, input, textarea, select, a, label, [contenteditable], .thread-turns, .acct-chats, .rec-steps, .ts-table, .draft-result';
+  const NO_DRAG = 'button, input, textarea, select, a, label, [contenteditable], .thread-turns, .acct-chats, .rec-steps, .ts-acts, .ts-table, .draft-result';
   const spotKey = (name) => `goat.panel.${name}`;
   function movePanel(p, x, y) {
     const w = p.offsetWidth || 320;

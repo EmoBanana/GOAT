@@ -40,7 +40,7 @@ const recorder = createRecorder();
 let lastRecording = null;
 // Timesheet tracking: off until Ctrl+Option+T, after every launch.
 const tracker = createTracker({
-  sample: (allow) => sampleActiveWindow({ timeoutMs: 2500, allow }),
+  sample: (allow) => sampleActiveWindow({ timeoutMs: 2500, allow, site: true }),
   send: (samples) => api.postActivity(samples),
   getConfig: () => api.timesheetConfig(),
   intervalMs: Math.max(0.1, Number(process.env.GOAT_TRACK_INTERVAL_SEC) || 10) * 1000,
@@ -225,9 +225,11 @@ function openWallet() {
   send({ type: 'open-wallet' });
 }
 
+// The panel opens at once and fills in when the day's activity lines are written.
 async function openTimesheet() {
-  const timesheet = await api.timesheet(localDate());
   focusOverlay();
+  send({ type: 'open-timesheet', loading: true });
+  const timesheet = await api.timesheet(localDate());
   send({ type: 'open-timesheet', timesheet });
 }
 
@@ -575,6 +577,8 @@ function registerIpc() {
       await steps.stop();
     }
     log(reply.error ? `ask failed: ${reply.error}` : `ask -> ${reply.source}${reply.guide ? ` (${reply.guide.id})` : ''} in ${reply.latencyMs} ms`);
+    // While tracking, a guide GOAT plays goes into the timesheet line for that stretch.
+    if (!reply.error && reply.source === 'guide' && reply.guide) tracker.note({ guide: reply.guide.title || reply.guide.id, app: context.app });
     if (!reply.error) reply.where = whereItRuns(serverUrl); // "running on this laptop" only when it does
     return reply;
   });

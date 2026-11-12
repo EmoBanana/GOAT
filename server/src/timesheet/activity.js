@@ -7,10 +7,28 @@ export function localDate(d = new Date()) {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
-// data/activity/<user>/<date>.jsonl and data/timesheets/<user>/<date>.json
+// data/activity/<user>/<date>.jsonl, the day's activity lines (<date>.notes.json) and
+// data/timesheets/<user>/<date>.json
 export function createActivityStore({ dataDir }) {
   const activityFile = (user, date) => path.join(dataDir, 'activity', user, `${date}.jsonl`);
+  const notesFile = (user, date) => path.join(dataDir, 'activity', user, `${date}.notes.json`);
   const approvalFile = (user, date) => path.join(dataDir, 'timesheets', user, `${date}.json`);
+
+  // Activity key -> the line written for it (see describe.js).
+  function readNotes(user, date) {
+    try {
+      const notes = JSON.parse(fs.readFileSync(notesFile(user, date), 'utf8'));
+      return notes && typeof notes === 'object' && !Array.isArray(notes) ? notes : {};
+    } catch {
+      return {};
+    }
+  }
+
+  function writeNotes(user, date, notes) {
+    const file = notesFile(user, date);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, `${JSON.stringify(notes, null, 2)}\n`);
+  }
 
   function append(user, records) {
     const byDate = new Map();
@@ -61,5 +79,5 @@ export function createActivityStore({ dataDir }) {
     }
   }
 
-  return { append, read, approve, approval, activityFile, approvalFile };
+  return { append, read, approve, approval, readNotes, writeNotes, activityFile, notesFile, approvalFile };
 }

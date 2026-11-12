@@ -147,7 +147,8 @@ export function createOllama({ host, keepAlive = '30m', timeoutMs = 120_000, num
   // reasoning is cut off at that budget (see streamChat). tools: Ollama function specs (from MCP
   // servers). Older Ollama builds reject `think`, and some models reject tools: retry once
   // without the offending field. format: a JSON schema for structured output (guide drafts).
-  async function chat({ model, messages, temperature = 0.3, think = false, tools, format, thinkBudgetMs = 0 }) {
+  // timeoutMs: a shorter limit for this call (the timesheet's activity lines).
+  async function chat({ model, messages, temperature = 0.3, think = false, tools, format, thinkBudgetMs = 0, timeoutMs: callTimeoutMs }) {
     let body = { model, messages, stream: false, think, keep_alive: keepAlive, options: { temperature, num_ctx: numCtx } };
     if (tools?.length) body.tools = tools;
     if (format) body.format = format;
@@ -157,16 +158,16 @@ export function createOllama({ host, keepAlive = '30m', timeoutMs = 120_000, num
       if (streamed.result) return streamed.result;
       r = streamed.r; // an error answer: handled below like any other
     } else {
-      r = await post('/api/chat', body);
+      r = await post('/api/chat', body, callTimeoutMs);
     }
     if (r.status === 400 && /think/i.test(errorText(r))) {
       const { think: _think, ...rest } = body;
       body = rest;
-      r = await post('/api/chat', body);
+      r = await post('/api/chat', body, callTimeoutMs);
     }
     if (r.status === 400 && body.tools && /tool/i.test(errorText(r))) {
       const { tools: _tools, ...rest } = body;
-      r = await post('/api/chat', rest);
+      r = await post('/api/chat', rest, callTimeoutMs);
     }
     if (!r.ok) fail(r, model);
     const message = r.data?.message || {};

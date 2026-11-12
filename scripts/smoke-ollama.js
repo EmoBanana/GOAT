@@ -6,6 +6,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { loadConfig, ROOT } from '../server/src/config.js';
 import { createOllama, hasModel } from '../server/src/llm/ollama.js';
+import { createDescriber } from '../server/src/timesheet/describe.js';
+import { buildTimeline } from '../server/src/timesheet/timeline.js';
 
 const envFile = path.join(ROOT, '.env');
 if (fs.existsSync(envFile)) process.loadEnvFile(envFile);
@@ -40,6 +42,32 @@ if (textReady) {
 } else {
   report(false, 'chat answer', 'skipped, the model is not available');
 }
+
+// The timesheet: a stretch in Canva and one in Autodesk Construction Cloud with a GOAT guide
+// become two lines that say so.
+async function timesheetCheck() {
+  const name = `timesheet lines from ${config.model}`;
+  if (!textReady) return report(false, name, 'skipped, the model is not available');
+  const t0 = Date.parse('2026-11-12T02:00:00Z');
+  const at = (s) => new Date(t0 + s * 1000).toISOString();
+  const run = (from, n, fields) => Array.from({ length: n }, (_, i) => ({ ts: at(from + i * 10), sec: 10, ...fields }));
+  const activities = buildTimeline([
+    ...run(0, 12, { app: 'Google Chrome', site: 'canva.com', title: 'GOAT pitch - Presentation' }),
+    ...run(120, 12, { app: 'Google Chrome', site: 'acc.autodesk.com', title: 'Forms - ALPHA Viaduct' }),
+    { ts: at(150), kind: 'guide', guide: 'Create a form in Autodesk Build', app: 'Google Chrome' },
+  ]);
+  const describe = createDescriber({ chat: (opts) => llm.chat({ model: config.model, ...opts }), activity: { readNotes: () => ({}), writeNotes() {} }, logger: { warn() {} } });
+  const started = Date.now();
+  try {
+    const [canva, acc] = await describe('smoke', '2026-11-12', activities);
+    const ok = canva.described && acc.described && /canva/i.test(canva.summary) && /\bform\b/i.test(acc.summary) && /guide/i.test(acc.summary);
+    return report(ok, name, `${Date.now() - started} ms, "${canva.summary}" / "${acc.summary}"`);
+  } catch (err) {
+    return report(false, name, err.message);
+  }
+}
+
+await timesheetCheck();
 
 async function transcribeCheck() {
   const name = `voice transcript from ${config.sttModel}`;
