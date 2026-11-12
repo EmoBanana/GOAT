@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { isSmallTalk, plainText } from '../src/assist.js';
+import { isSmallTalk, plainText, SYSTEM_PROMPT } from '../src/assist.js';
 import { DEFAULT_MODEL } from '../src/config.js';
 import { closedPortUrl, startMockOllama } from './helpers/mock-ollama.js';
 import { startTestServer } from './helpers/test-server.js';
@@ -320,6 +320,11 @@ describe('adaptive thinking and MCP tools', () => {
       await ollama.close();
     }
   });
+});
+
+test("GOAT is Gamuda's AI assistant, not a person", () => {
+  assert.match(SYSTEM_PROMPT, /^You are GOAT, Gamuda's friendly AI assistant/);
+  assert.doesNotMatch(SYSTEM_PROMPT, /senior engineer|colleague/i);
 });
 
 test('plainText strips markdown the model slips in', () => {
