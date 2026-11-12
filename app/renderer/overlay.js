@@ -999,7 +999,7 @@
   function stopClip(how = 'skipped') {
     if (shownClip) shownClip.finish(how);
   }
-  // The clip for a spoken question, if this Mac has one: resolves when it's over (how it ended), or null.
+  // The clip for a spoken question, if this Mac has one: { url, question } or null.
   async function clipFor(question) {
     let found = null;
     try {
@@ -1007,7 +1007,7 @@
     } catch {
       found = null;
     }
-    return found && typeof found.url === 'string' ? playClip(found.url) : null;
+    return found && typeof found.url === 'string' ? found : null;
   }
 
   function handleReply(reply) {
@@ -1059,12 +1059,15 @@
     if (!said) settle(readingMs(say));
   }
 
-  async function ask(question, extra) {
+  async function ask(spoken, extra) {
     stopClip('cancelled');
     setThinking(true);
+    // Asked aloud, with a clip of its own ("What's MCP?"): the clip plays while GOAT works, and
+    // the model gets the question as it's meant, not as speech to text heard it ("Once MCP").
+    const clip = extra && extra.voice ? await clipFor(spoken) : null;
+    const question = (clip && clip.question) || spoken;
     emit('ask', { question });
-    // Asked aloud, with a clip of its own ("What's MCP?"): the clip plays while GOAT works.
-    const clipOver = extra && extra.voice ? clipFor(question) : null;
+    const clipOver = clip ? playClip(clip.url) : null;
     let reply;
     try {
       reply = await goat.ask(question, { ...(extra || {}), chatId: currentChatId() });

@@ -974,7 +974,7 @@ await check('voice: "What\'s MCP?" plays its clip on a foggy screen first, and t
   // Playwright's Chromium can't play the real H.264 clip; a short WAV plays through the same <video>.
   const clipFile = path.join(artifacts, 'clip-test.wav');
   fs.writeFileSync(clipFile, toneWav(4000)); // long enough for the clouds to roll in first
-  await setReply('clipFor', { name: 'MCP', url: pathToFileURL(clipFile).href });
+  await setReply('clipFor', { name: 'MCP', url: pathToFileURL(clipFile).href, question: "What's MCP?" });
   await setReply('speak', undefined); // no voice from the server: the Mac's reads the answer
   await setReply('ask', LLM_REPLY, 300);
   const clip = () =>
@@ -1011,6 +1011,14 @@ await check('voice: "What\'s MCP?" plays its clip on a foggy screen first, and t
   await until(() => page.evaluate(() => window.__spoken.length === 1), 'the answer, spoken after the clip');
   assert.deepEqual(await page.evaluate(() => window.__spoken), [LLM_REPLY.say]);
   assert.match((await bubble()).text, /Photos are the evidence/, 'and its words show as it is said');
+  await page.evaluate(() => window.__asked);
+
+  // Speech to text mishears "what's" ("Once MCP"): the model is still asked "What's MCP?".
+  await spySpeech();
+  await askAloud('Once MCP');
+  await until(async () => (await calls('ask')).length === 1, 'the ask');
+  assert.equal((await calls('ask'))[0].args[0], "What's MCP?");
+  await page.keyboard.press('Escape');
   await page.evaluate(() => window.__asked);
 
   // A click on the fog skips to the answer.

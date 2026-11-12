@@ -35,7 +35,8 @@ test('a clip is found only when its file is on this Mac, in the first folder tha
   const full = fs.mkdtempSync(path.join(os.tmpdir(), 'goat-clips-'));
   fs.writeFileSync(path.join(full, 'MCP.mp4'), 'not really a video');
   try {
-    assert.deepEqual(clipFor("What's MCP?", { dirs: [undefined, empty, full] }), { name: 'MCP', url: pathToFileURL(path.join(full, 'MCP.mp4')).href });
+    assert.deepEqual(clipFor("What's MCP?", { dirs: [undefined, empty, full] }), { name: 'MCP', url: pathToFileURL(path.join(full, 'MCP.mp4')).href, question: "What's MCP?" });
+    assert.equal(clipFor('Once MCP', { dirs: [full] }).question, "What's MCP?", 'the model gets the question as meant');
     assert.equal(clipFor("What's MCP?", { dirs: [empty] }), null, 'no file, no clip');
     assert.equal(clipFor('How do I set up MCP?', { dirs: [full] }), null, 'another question');
     assert.equal(clipFor("What's MCP?"), null, 'nowhere to look');

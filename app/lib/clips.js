@@ -24,10 +24,13 @@ export const CLIPS = [
     file: 'MCP.mp4',
     asked: new RegExp(`${LEAD}${WHAT_IS}${MCP}${TAIL}`, 'i'),
     loosely: shortMention,
+    // What the model is asked, whatever speech to text made of it ("Once MCP" got setup steps).
+    question: "What's MCP?",
   },
 ];
 
-// { name, url } for a question that has a clip on this Mac, else null. dirs: where to look, in order.
+// { name, url, question } for a question that has a clip on this Mac, else null. dirs: where to
+// look, in order. question: the question as it's meant, to ask the model instead of the transcript.
 export function clipFor(question, { dirs = [] } = {}) {
   const q = String(question || '').slice(0, 300);
   const clip = CLIPS.find((c) => c.asked.test(q) || (c.loosely && c.loosely(q)));
@@ -35,7 +38,7 @@ export function clipFor(question, { dirs = [] } = {}) {
   for (const dir of dirs.filter(Boolean)) {
     const file = path.join(String(dir), clip.file);
     try {
-      if (fs.statSync(file).isFile()) return { name: clip.name, url: pathToFileURL(file).href };
+      if (fs.statSync(file).isFile()) return { name: clip.name, url: pathToFileURL(file).href, question: clip.question };
     } catch {
       // not in this folder
     }

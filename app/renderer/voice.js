@@ -14,6 +14,10 @@
   const RATE = 16000;
   const MAX_MS = 25000; // Gemma takes about 30 s of audio
   const WARM_MS = 30000; // keep the mic open this long after a question
+  // While the mic is open, the last 0.6 s is kept and starts the next recording: Option+Cmd counts
+  // only after a 150 ms hold, and a first word said with the keys ("what's MCP" came through as
+  // "Once MCP") was lost. Never GOAT's own voice: cleared while GOAT talks or plays a clip.
+  const PREROLL_MS = 600;
   const MIN_HOLD_MS = 350; // shorter holds are Option+Cmd shortcuts, not questions
   const MIN_SPEECH_MS = 300;
   const BARS = 9;
@@ -134,9 +138,15 @@
     const analyser = ctx.createAnalyser();
     analyser.fftSize = 1024;
     const processor = ctx.createScriptProcessor(2048, 1, 1);
-    const m = { stream, ctx, analyser, processor, chunks: [], capturing: false, idleTimer: null };
+    const m = { stream, ctx, analyser, processor, chunks: [], capturing: false, idleTimer: null, preroll: [], prerollMax: Math.ceil(((PREROLL_MS / 1000) * ctx.sampleRate) / 2048) };
     processor.onaudioprocess = (e) => {
-      if (m.capturing) m.chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+      const data = new Float32Array(e.inputBuffer.getChannelData(0));
+      if (m.capturing) m.chunks.push(data);
+      else if (goatTalking) m.preroll.length = 0;
+      else {
+        m.preroll.push(data);
+        if (m.preroll.length > m.prerollMax) m.preroll.shift();
+      }
     };
     source.connect(analyser);
     source.connect(processor);
@@ -210,7 +220,7 @@
       return;
     }
     if (!wantDown) return; // let go while the mic was opening: too short to be a question
-    m.chunks = [];
+    m.chunks = m.preroll.splice(0); // the moment before the hold counted
     m.capturing = true;
     turn = { started: performance.now(), timer: setTimeout(() => stop(), MAX_MS) };
     ui.hideBubble();
@@ -279,6 +289,11 @@
     else stop();
   });
   ui.onEvent('voice-error', (msg) => ui.showBubble({ kind: 'error', text: msg.message, follow: true }));
+
+  // GOAT talking or playing a clip: the pre-roll keeps none of it.
+  let goatTalking = false;
+  for (const type of ['speak:wait', 'speak:start', 'clip:start']) ui.onEvent(type, () => (goatTalking = true));
+  for (const type of ['speak:end', 'clip:end']) ui.onEvent(type, () => (goatTalking = false));
 
   // While GOAT talks, its words show in the answer bubble with the one being said marked, so the
   // HUD steps aside (no swaying bars); a spoken question's guide reads its steps aloud.
