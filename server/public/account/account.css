@@ -1,70 +1,328 @@
+/* GOAT's sign-in page, drawn like the download page (web/app/globals.css): neo-brutalist and
+   minimal. White paper, 2px black rules, hard offset shadows, square corners; GOAT blue for the
+   actions, signal yellow for the highlight. Archivo (widened for headings) and Plex Mono come
+   pinned from jsDelivr, where AppKit comes from; without them the fallbacks keep the layout. */
+
+@font-face {
+  font-family: 'Archivo';
+  font-style: normal;
+  font-weight: 100 900;
+  font-stretch: 62% 125%;
+  font-display: swap;
+  src: url('https://cdn.jsdelivr.net/npm/@fontsource-variable/archivo@5.3.0/files/archivo-latin-wdth-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('https://cdn.jsdelivr.net/npm/@fontsource/ibm-plex-mono@5.3.0/files/ibm-plex-mono-latin-500-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('https://cdn.jsdelivr.net/npm/@fontsource/ibm-plex-mono@5.3.0/files/ibm-plex-mono-latin-600-normal.woff2') format('woff2');
+}
+
 :root {
-  --blue: #2563eb;
-  --blue-dark: #1d4ed8;
-  --ink: #0f172a;
-  --muted: #64748b;
-  --line: rgba(15, 23, 42, 0.12);
   --paper: #ffffff;
-  --page: #eef2f7;
-  --red: #b91c1c;
+  --ink: #0a0a0a;
+  --ink-soft: #3b3b3b;
+  --grey: #f1f2f4;
+  --blue: #2563eb;
+  --yellow: #ffd60a;
+  --rule: 2px solid var(--ink);
+  --sans: 'Archivo', 'Helvetica Neue', Arial, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+  --gutter: clamp(16px, 4vw, 40px);
   color-scheme: light;
 }
 
-* { box-sizing: border-box; }
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
 
 body {
-  margin: 0;
+  display: flex;
+  flex-direction: column;
   min-height: 100vh;
+  min-height: 100dvh;
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 400 1.0625rem/1.55 var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--yellow);
+  color: var(--ink);
+}
+
+:focus-visible {
+  outline: 3px solid var(--blue);
+  outline-offset: 3px;
+}
+
+h1,
+p {
+  margin: 0;
+}
+
+mark {
+  padding: 0 0.06em;
+  background: var(--yellow);
+  color: inherit;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+kbd {
+  display: inline-block;
+  min-width: 1.9em;
+  padding: 0.08em 0.42em 0.12em;
+  border: var(--rule);
+  background: var(--paper);
+  box-shadow: 2px 2px 0 var(--ink);
+  color: var(--ink);
+  font: 600 0.74em/1.3 var(--mono);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.keys {
+  display: inline-flex;
+  gap: 5px;
+  margin: 0 0.18em;
+  vertical-align: 0.1em;
+}
+
+/* The wordmark over a rule, as at the top of the download page. */
+.bar {
+  border-bottom: var(--rule);
+}
+.bar-inner {
+  display: flex;
+  align-items: center;
+  max-width: 1160px;
+  min-height: 68px;
+  margin: 0 auto;
+  padding: 0 var(--gutter);
+}
+.wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1.4rem;
+  font-weight: 900;
+  font-variation-settings: 'wdth' 125;
+  letter-spacing: -0.01em;
+}
+/* The saucer and its shadow weigh the cup down; lift it to sit level with the word. */
+.wordmark .logo {
+  width: 36px;
+  height: 34px;
+  transform: translateY(-3px);
+}
+
+/* One card in the middle of the rest. */
+.stage {
+  flex: 1;
   display: grid;
   place-items: center;
-  padding: 24px 16px;
-  background: var(--page);
-  color: var(--ink);
-  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, Roboto, sans-serif;
+  padding: clamp(28px, 7vh, 72px) var(--gutter) clamp(40px, 9vh, 96px);
 }
-
 .card {
-  width: min(440px, 100%);
-  padding: 32px 28px 26px;
-  border-radius: 18px;
+  width: min(480px, 100%);
+  padding: 28px 30px 30px;
+  border: var(--rule);
   background: var(--paper);
-  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.14), 0 0 0 1px var(--line);
+  box-shadow: 10px 10px 0 var(--ink);
+}
+.label {
+  margin-bottom: 16px;
+  font: 600 0.8rem/1 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+h1 {
+  margin-bottom: 14px;
+  font-size: clamp(2rem, 7.5vw, 2.5rem);
+  font-weight: 800;
+  font-variation-settings: 'wdth' 118;
+  line-height: 1.02;
+  letter-spacing: -0.03em;
+}
+.lead {
+  margin-bottom: 26px;
+  color: var(--ink-soft);
+}
+.lead strong {
+  color: var(--ink);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.lead .keys {
+  margin: 0 0.06em;
+}
+/* The hotkey and its brackets wrap as one. */
+.hotkey {
+  white-space: nowrap;
+}
+section > :last-child {
+  margin-bottom: 0;
 }
 
-.mark { margin-bottom: 14px; }
-.mark svg { display: block; filter: drop-shadow(0 2px 3px rgba(15, 23, 42, 0.25)); }
-
-h1 { margin: 0 0 8px; font-size: 24px; line-height: 1.25; letter-spacing: -0.01em; }
-.lead { margin: 0 0 22px; color: var(--muted); }
-.lead strong { color: var(--ink); overflow-wrap: anywhere; }
-
-.actions { display: grid; gap: 10px; }
-
-button {
-  min-height: 44px;
-  padding: 10px 18px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
+/* Buttons sit on a hard shadow: they lift on hover and press flat. */
+.actions {
+  display: grid;
+  gap: 14px;
+}
+.btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  width: 100%;
+  min-height: 54px;
+  padding: 13px 18px;
+  border: var(--rule);
+  background: var(--blue);
+  color: #fff;
+  font: 700 1.0625rem/1.2 var(--sans);
+  text-align: left;
+  box-shadow: 4px 4px 0 var(--ink);
+  cursor: pointer;
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+.btn > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.btn .arrow {
+  flex: none;
+  width: 18px;
+  height: 14px;
+  transition: transform 0.1s ease;
+}
+.btn:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0 var(--ink);
+}
+.btn:hover .arrow {
+  transform: translateX(3px);
+}
+.btn:active {
+  transform: translate(4px, 4px);
+  box-shadow: 0 0 0 var(--ink);
+}
+.btn-plain {
   background: var(--paper);
   color: var(--ink);
-  font: 600 15px/1.2 inherit;
-  font-family: inherit;
-  cursor: pointer;
 }
-button:hover { border-color: rgba(15, 23, 42, 0.25); }
-button.primary { border-color: var(--blue); background: var(--blue); color: #fff; }
-button.primary:hover { background: var(--blue-dark); }
-button.link { min-height: 0; padding: 0; border: 0; background: none; color: var(--blue); font-weight: 500; }
-button:focus-visible { outline: 3px solid rgba(37, 99, 235, 0.35); outline-offset: 2px; }
 
-.status { min-height: 1.5em; margin: 16px 0 0; color: var(--muted); font-size: 13.5px; }
-body[data-state="error"] .status { color: var(--red); }
+/* Loading: a blue block runs along a ruled track. */
+.track {
+  position: relative;
+  height: 16px;
+  overflow: hidden;
+  border: var(--rule);
+}
+.track i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 35%;
+  background: var(--blue);
+  animation: goat-track 1.1s ease-in-out infinite alternate;
+}
+@keyframes goat-track {
+  to {
+    transform: translateX(185.7%);
+  }
+}
+
+/* What's happening, in mono. Empty, it takes no room. */
+.status {
+  margin-top: 18px;
+  color: var(--ink-soft);
+  font: 500 0.8rem/1.45 var(--mono);
+}
+.status:empty {
+  margin: 0;
+}
+/* A problem shows as a signal-yellow note, and the buttons wait, flat and grey. */
+body[data-state='error'] .status {
+  margin-top: 22px;
+  padding: 12px 14px;
+  border: var(--rule);
+  background: var(--yellow);
+  color: var(--ink);
+}
+body[data-state='error'] .actions {
+  pointer-events: none;
+}
+body[data-state='error'] .btn {
+  background: var(--grey);
+  color: var(--ink-soft);
+  box-shadow: none;
+  transform: none;
+}
 
 /* One section at a time. */
-.when-ready, .when-restored, .when-done, .when-loading { display: none; }
-body[data-state="ready"] .when-ready,
-body[data-state="error"] .when-ready { display: block; }
-body[data-state="restored"] .when-restored { display: block; }
-body[data-state="done"] .when-done { display: block; }
-body[data-state="loading"] .when-loading { display: block; }
-body[data-state="error"] .actions { opacity: 0.55; pointer-events: none; }
+.when-ready,
+.when-restored,
+.when-done,
+.when-loading {
+  display: none;
+}
+body[data-state='ready'] .when-ready,
+body[data-state='error'] .when-ready {
+  display: block;
+}
+body[data-state='restored'] .when-restored {
+  display: block;
+}
+body[data-state='done'] .when-done {
+  display: block;
+}
+body[data-state='loading'] .when-loading {
+  display: block;
+}
+/* Finishing a sign-in, the status line says so instead of "Loading sign-in…". */
+body[data-state='loading']:has(.status:not(:empty)) .when-loading .lead {
+  display: none;
+}
+.when-loading .lead {
+  margin-bottom: 18px;
+}
+
+/* Phones: the card sits near the top instead of floating mid-screen. */
+@media (max-width: 520px) {
+  .bar-inner {
+    min-height: 60px;
+  }
+  .stage {
+    place-items: start center;
+  }
+  .card {
+    padding: 22px 20px 24px;
+    box-shadow: 6px 6px 0 var(--ink);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn,
+  .btn .arrow {
+    transition: none;
+  }
+  .track i {
+    width: 50%;
+    animation: none;
+  }
+}

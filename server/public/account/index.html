@@ -8,43 +8,86 @@
     <meta http-equiv="Content-Security-Policy" content="script-src 'self' https://cdn.jsdelivr.net; object-src 'none'; base-uri 'none'">
     <title>Sign in to GOAT</title>
     <link rel="icon" href="icon.svg" type="image/svg+xml">
+    <!-- The download page's fonts come pinned from the same CDN as AppKit (see account.css). -->
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    <link rel="preload" href="https://cdn.jsdelivr.net/npm/@fontsource-variable/archivo@5.3.0/files/archivo-latin-wdth-normal.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="stylesheet" href="account.css">
   </head>
   <body data-state="loading">
-    <main class="card">
-      <div class="mark" aria-hidden="true">
-        <svg width="40" height="40" viewBox="0 0 24 24"><path d="M3 2 L3 19 L7 15 L10 21.5 L12.8 20.3 L9.9 14 L15.5 14 Z" fill="#2563eb" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/></svg>
+    <header class="bar">
+      <div class="bar-inner">
+        <span class="wordmark">
+          <!-- GOAT's kopitiam cup, as in web/components/CupLogo.jsx. -->
+          <svg class="logo" viewBox="6.5 6 51 47.5" aria-hidden="true">
+            <g stroke-linejoin="round" stroke-linecap="round">
+              <g transform="translate(2.4 2.4)" fill="#0a0a0a" stroke="#0a0a0a" stroke-width="2.4">
+                <ellipse cx="30" cy="45.5" rx="22" ry="5"/>
+                <path d="M14 21 L17.5 40 Q18.5 44 23 44 L37 44 Q41.5 44 42.5 40 L46 21 Z"/>
+                <path d="M44.6 25.5 C53 24.5 54.5 36.5 43.4 35.8" fill="none" stroke-width="5"/>
+              </g>
+              <ellipse cx="30" cy="45.5" rx="22" ry="5" fill="#ffffff" stroke="#0a0a0a" stroke-width="2.4"/>
+              <path d="M44.6 25.5 C53 24.5 54.5 36.5 43.4 35.8" fill="none" stroke="#0a0a0a" stroke-width="6.6"/>
+              <path d="M44.6 25.5 C53 24.5 54.5 36.5 43.4 35.8" fill="none" stroke="#ffffff" stroke-width="2.6"/>
+              <path d="M14 21 L17.5 40 Q18.5 44 23 44 L37 44 Q41.5 44 42.5 40 L46 21 Z" fill="#ffffff"/>
+              <path d="M15.9 25.4 L44.1 25.4 L43.55 28.6 L16.45 28.6 Z" fill="#1f7a4d"/>
+              <path d="M14 21 L17.5 40 Q18.5 44 23 44 L37 44 Q41.5 44 42.5 40 L46 21 Z" fill="none" stroke="#0a0a0a" stroke-width="2.4"/>
+              <ellipse cx="30" cy="21" rx="16" ry="3.6" fill="#ffffff" stroke="#0a0a0a" stroke-width="2.4"/>
+              <ellipse cx="30" cy="21.3" rx="13.1" ry="2.3" fill="#6b3f1d"/>
+              <path d="M25 15.5 c-2.6 -2.6 2.6 -4.6 0 -7.6 M33.5 15.5 c-2.6 -2.6 2.6 -4.6 0 -7.6" fill="none" stroke="#0a0a0a" stroke-width="2.4"/>
+            </g>
+          </svg>
+          GOAT
+        </span>
       </div>
+    </header>
 
-      <section class="when-ready">
-        <h1>Sign in to GOAT</h1>
-        <p class="lead">Create an account with your email or Google, or connect a wallet you already have. Your GOAT balance, Pro and chats follow your account.</p>
-        <div class="actions">
-          <button id="create" class="primary" type="button">Create account</button>
-          <button id="connect" type="button">Connect wallet</button>
-        </div>
-      </section>
+    <main class="stage">
+      <div class="card">
+        <p class="label">Account</p>
 
-      <section class="when-restored">
-        <h1>Welcome back</h1>
-        <p class="lead">This browser is still signed in as <strong id="was"></strong>.</p>
-        <div class="actions">
-          <button id="continue" class="primary" type="button">Continue as <span id="was-short"></span></button>
-          <button id="other" type="button">Use a different account</button>
-        </div>
-      </section>
+        <section class="when-ready">
+          <h1>Sign in to <mark>GOAT</mark></h1>
+          <p class="lead">Create an account with your email or Google, or connect a wallet you already have. Your GOAT balance, Pro and chats follow your account.</p>
+          <div class="actions">
+            <button id="create" class="btn" type="button">
+              <span>Create account</span>
+              <svg class="arrow" viewBox="0 0 18 14" aria-hidden="true"><path d="M1 7 H15.5 M10 1.5 L15.5 7 L10 12.5" fill="none" stroke="currentColor" stroke-width="2.4"/></svg>
+            </button>
+            <button id="connect" class="btn btn-plain" type="button">
+              <span>Connect wallet</span>
+              <svg class="arrow" viewBox="0 0 18 14" aria-hidden="true"><path d="M1 7 H15.5 M10 1.5 L15.5 7 L10 12.5" fill="none" stroke="currentColor" stroke-width="2.4"/></svg>
+            </button>
+          </div>
+        </section>
 
-      <section class="when-done">
-        <h1>You're signed in</h1>
-        <p class="lead">Signed in as <strong id="who"></strong>. Go back to GOAT; you can close this tab. To switch accounts later, sign out in GOAT (Ctrl+Option+A).</p>
-      </section>
+        <section class="when-restored">
+          <h1>Welcome <mark>back</mark></h1>
+          <p class="lead">This browser is still signed in as <strong id="was"></strong>.</p>
+          <div class="actions">
+            <button id="continue" class="btn" type="button">
+              <span>Continue as <span id="was-short"></span></span>
+              <svg class="arrow" viewBox="0 0 18 14" aria-hidden="true"><path d="M1 7 H15.5 M10 1.5 L15.5 7 L10 12.5" fill="none" stroke="currentColor" stroke-width="2.4"/></svg>
+            </button>
+            <button id="other" class="btn btn-plain" type="button">
+              <span>Use a different account</span>
+              <svg class="arrow" viewBox="0 0 18 14" aria-hidden="true"><path d="M1 7 H15.5 M10 1.5 L15.5 7 L10 12.5" fill="none" stroke="currentColor" stroke-width="2.4"/></svg>
+            </button>
+          </div>
+        </section>
 
-      <section class="when-loading">
-        <h1>Sign in to GOAT</h1>
-        <p class="lead">Loading sign-in…</p>
-      </section>
+        <section class="when-done">
+          <h1>You're <mark>signed in</mark></h1>
+          <p class="lead">Signed in as <strong id="who"></strong>. Go back to GOAT; you can close this tab. To switch accounts later, sign out in GOAT <span class="hotkey">(<span class="keys"><kbd>Ctrl</kbd><kbd>Option</kbd><kbd>A</kbd></span>).</span></p>
+        </section>
 
-      <p id="status" class="status" role="status" aria-live="polite"></p>
+        <section class="when-loading">
+          <h1>Sign in to <mark>GOAT</mark></h1>
+          <p class="lead">Loading sign-in…</p>
+          <div class="track" aria-hidden="true"><i></i></div>
+        </section>
+
+        <p id="status" class="status" role="status" aria-live="polite"></p>
+      </div>
     </main>
     <script type="module" src="account.js"></script>
   </body>

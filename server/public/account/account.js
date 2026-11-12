@@ -75,8 +75,9 @@ async function main() {
     connectMethodsOrder: mode === 'connect' ? ['wallet', 'email', 'social'] : ['email', 'social', 'wallet'],
     defaultAccountTypes: { eip155: 'eoa' },
     enableNetworkSwitch: false,
+    // The page's look in the AppKit popup too: GOAT blue, square corners, the page's font.
     themeMode: 'light',
-    themeVariables: { '--w3m-accent': '#2563eb' },
+    themeVariables: { '--w3m-accent': '#2563eb', '--w3m-border-radius-master': '0px', '--w3m-font-family': "'Archivo', 'Helvetica Neue', Arial, sans-serif" },
   });
 
   // starting: AppKit may restore a session from an earlier sign-in in this browser, which we
