@@ -5,21 +5,21 @@
       "platform": "darwin",
       "arch": "arm64",
       "file": "GOAT-0.1.0-mac-arm64.zip",
-      "bytes": 123478277,
-      "sha256": "4f8a1e711431f678c8affa3bbea4cf7a7748eaab224e335c7bd3c52585d1a9d2",
+      "bytes": 123422684,
+      "sha256": "a64d429226d834dae1610732343992d6f0c9b014ba9f1f310c2c7b287a02fd10",
       "serverUrl": "http://127.0.0.1:8402",
-      "builtAt": "2026-11-12T12:33:14.910Z",
-      "url": "https://so5pz7cuzgccjsw6.public.blob.vercel-storage.com/goat/GOAT-0.1.0-mac-arm64.zip"
+      "builtAt": "2026-11-12T13:11:54.828Z",
+      "url": "https://so5pz7cuzgccjsw6.public.blob.vercel-storage.com/goat/GOAT-0.1.0-mac-arm64.zip?v=a64d429226d8"
     },
     {
       "platform": "win32",
       "arch": "x64",
       "file": "GOAT-0.1.0-win-x64.zip",
-      "bytes": 162697561,
-      "sha256": "80909fe94515e2ed2351d56cb2786736b27dbff9c76464f3815be5284f7d0fdb",
+      "bytes": 162696771,
+      "sha256": "3fddf5aceeeaf989fbaac759d2836e5112dada43fe250ddd64dfa282d196c9e0",
       "serverUrl": "http://127.0.0.1:8402",
-      "builtAt": "2026-11-12T12:33:31.196Z",
-      "url": "https://so5pz7cuzgccjsw6.public.blob.vercel-storage.com/goat/GOAT-0.1.0-win-x64.zip"
+      "builtAt": "2026-11-12T13:12:12.416Z",
+      "url": "https://so5pz7cuzgccjsw6.public.blob.vercel-storage.com/goat/GOAT-0.1.0-win-x64.zip?v=3fddf5aceeea"
     }
   ],
   "pricing": {
