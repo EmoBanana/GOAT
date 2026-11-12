@@ -1,60 +1,24 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-  <!-- GOAT's app icon: the blue cursor floating in a painted sky above a calm sea.
-       Apple's icon grid: an 824 px tile with 100 px margins. scripts/package.js renders it to .icns. -->
-  <defs>
-    <linearGradient id="sky" x1="0" y1="100" x2="0" y2="800" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#4F86C6"/>
-      <stop offset="0.6" stop-color="#93BCE4"/>
-      <stop offset="1" stop-color="#D7E7F4"/>
-    </linearGradient>
-    <linearGradient id="sea" x1="0" y1="790" x2="0" y2="924" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#43656E"/>
-      <stop offset="1" stop-color="#26404A"/>
-    </linearGradient>
-    <linearGradient id="cloud-a" x1="0" y1="205" x2="0" y2="345" gradientUnits="userSpaceOnUse">
-      <stop offset="0.25" stop-color="#FFFFFF"/>
-      <stop offset="1" stop-color="#BFD2E6"/>
-    </linearGradient>
-    <linearGradient id="cloud-b" x1="0" y1="560" x2="0" y2="660" gradientUnits="userSpaceOnUse">
-      <stop offset="0.25" stop-color="#FFFFFF"/>
-      <stop offset="1" stop-color="#C3D5E8"/>
-    </linearGradient>
-    <linearGradient id="face" x1="0" y1="2" x2="0" y2="21.5" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#3D7BFF"/>
-      <stop offset="1" stop-color="#1F4FD6"/>
-    </linearGradient>
-    <radialGradient id="shadow">
-      <stop offset="0" stop-color="#0B1A26" stop-opacity="0.55"/>
-      <stop offset="1" stop-color="#0B1A26" stop-opacity="0"/>
-    </radialGradient>
-    <clipPath id="tile">
-      <rect x="100" y="100" width="824" height="824" rx="186"/>
-    </clipPath>
-  </defs>
-
-  <g clip-path="url(#tile)">
-    <rect x="100" y="100" width="824" height="824" fill="url(#sky)"/>
-    <g fill="url(#cloud-a)">
-      <circle cx="232" cy="300" r="44"/>
-      <circle cx="292" cy="262" r="62"/>
-      <circle cx="362" cy="292" r="50"/>
-      <rect x="190" y="292" width="216" height="52" rx="26"/>
+  <!-- GOAT's app icon: a kopitiam cup of kopi on a signal-yellow tile, outlined in black with a hard
+       shadow. Apple's grid: an 824 px tile with 100 px margins. scripts/package.js renders it to
+       .icns for macOS and, cropped to the tile, .ico for Windows. -->
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="#ffd60a"/>
+  <g transform="translate(510 528) scale(12.6) translate(-31 -29)" stroke-linejoin="round" stroke-linecap="round">
+    <g transform="translate(2.4 2.4)" fill="#0a0a0a" stroke="#0a0a0a" stroke-width="2.4">
+      <ellipse cx="30" cy="45.5" rx="22" ry="5"/>
+      <path d="M14 21 L17.5 40 Q18.5 44 23 44 L37 44 Q41.5 44 42.5 40 L46 21 Z"/>
+      <path d="M44.6 25.5 C53 24.5 54.5 36.5 43.4 35.8" fill="none" stroke-width="5"/>
     </g>
-    <g fill="url(#cloud-b)">
-      <circle cx="738" cy="610" r="38"/>
-      <circle cx="790" cy="584" r="50"/>
-      <circle cx="846" cy="612" r="36"/>
-      <rect x="704" y="606" width="176" height="52" rx="26"/>
-    </g>
-    <rect x="100" y="790" width="824" height="134" fill="url(#sea)"/>
-    <rect x="100" y="788" width="824" height="4" fill="#E9F1F8" opacity="0.55"/>
-    <ellipse cx="520" cy="850" rx="170" ry="22" fill="url(#shadow)"/>
-
-    <!-- The cursor (app/renderer/cursor-art.js's arrow), with a little depth behind it. -->
-    <g transform="translate(253 151) scale(28)" stroke-linejoin="round">
-      <path d="M3 2 L3 19 L7 15 L10 21.5 L12.8 20.3 L9.9 14 L15.5 14 Z" transform="translate(0.55 0.65)" fill="#14318A" stroke="#14318A" stroke-width="1.25"/>
-      <path d="M3 2 L3 19 L7 15 L10 21.5 L12.8 20.3 L9.9 14 L15.5 14 Z" fill="url(#face)" stroke="#FFFFFF" stroke-width="1.25"/>
-    </g>
+    <ellipse cx="30" cy="45.5" rx="22" ry="5" fill="#ffffff" stroke="#0a0a0a" stroke-width="2.4"/>
+    <ellipse cx="30" cy="44.8" rx="11" ry="2" fill="none" stroke="#0a0a0a" stroke-width="1.1" opacity="0.35"/>
+    <path d="M44.6 25.5 C53 24.5 54.5 36.5 43.4 35.8" fill="none" stroke="#0a0a0a" stroke-width="6.6"/>
+    <path d="M44.6 25.5 C53 24.5 54.5 36.5 43.4 35.8" fill="none" stroke="#ffffff" stroke-width="2.6"/>
+    <path d="M14 21 L17.5 40 Q18.5 44 23 44 L37 44 Q41.5 44 42.5 40 L46 21 Z" fill="#ffffff"/>
+    <path d="M15.9 25.4 L44.1 25.4 L43.55 28.6 L16.45 28.6 Z" fill="#1f7a4d"/>
+    <path d="M14 21 L17.5 40 Q18.5 44 23 44 L37 44 Q41.5 44 42.5 40 L46 21 Z" fill="none" stroke="#0a0a0a" stroke-width="2.4"/>
+    <ellipse cx="30" cy="21" rx="16" ry="3.6" fill="#ffffff" stroke="#0a0a0a" stroke-width="2.4"/>
+    <ellipse cx="30" cy="21.3" rx="13.1" ry="2.3" fill="#6b3f1d"/>
+    <path d="M25 15.5 c-2.6 -2.6 2.6 -4.6 0 -7.6 M33.5 15.5 c-2.6 -2.6 2.6 -4.6 0 -7.6" fill="none" stroke="#0a0a0a" stroke-width="2.4"/>
   </g>
-  <rect x="100.5" y="100.5" width="823" height="823" rx="185.5" fill="none" stroke="#0B1B33" stroke-opacity="0.14"/>
+  <rect x="111" y="111" width="802" height="802" rx="175" fill="none" stroke="#0a0a0a" stroke-width="22"/>
 </svg>
