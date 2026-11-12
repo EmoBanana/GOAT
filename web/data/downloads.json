@@ -5,21 +5,21 @@
       "platform": "darwin",
       "arch": "arm64",
       "file": "GOAT-0.1.0-mac-arm64.zip",
-      "bytes": 123440613,
-      "sha256": "2f32836f9035044f41114baf4e1f832f7183758d736efbb540c944ed8f620c95",
+      "bytes": 123445260,
+      "sha256": "e916b15ba2ebf48cb2b7e9ea7455f6d25cf22d92abed160cf46a19d6aed34153",
       "serverUrl": "https://bolometrically-calorimetrical-shon.ngrok-free.dev",
-      "builtAt": "2026-11-12T19:52:47.755Z",
-      "url": "https://so5pz7cuzgccjsw6.public.blob.vercel-storage.com/goat/GOAT-0.1.0-mac-arm64.zip?v=2f32836f9035"
+      "builtAt": "2026-11-12T20:37:02.173Z",
+      "url": "https://so5pz7cuzgccjsw6.public.blob.vercel-storage.com/goat/GOAT-0.1.0-mac-arm64.zip?v=e916b15ba2eb"
     },
     {
       "platform": "win32",
       "arch": "x64",
       "file": "GOAT-0.1.0-win-x64.zip",
-      "bytes": 162715923,
-      "sha256": "2f64d4616a04c4dcbd0beac672557b497b9aed0de9174d3050cb6029c74855bc",
+      "bytes": 162720264,
+      "sha256": "c442d5ea5db3b36f6238562f1f6b688515e492bbafa82e77d6ce59d8651cba4c",
       "serverUrl": "https://bolometrically-calorimetrical-shon.ngrok-free.dev",
-      "builtAt": "2026-11-12T19:53:03.777Z",
-      "url": "https://so5pz7cuzgccjsw6.public.blob.vercel-storage.com/goat/GOAT-0.1.0-win-x64.zip?v=2f64d4616a04"
+      "builtAt": "2026-11-12T20:37:17.090Z",
+      "url": "https://so5pz7cuzgccjsw6.public.blob.vercel-storage.com/goat/GOAT-0.1.0-win-x64.zip?v=c442d5ea5db3"
     }
   ],
   "pricing": {
