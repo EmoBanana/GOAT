@@ -88,6 +88,16 @@ function upload(build) {
   return url;
 }
 
+// Blob serves a file with a month-long browser cache, and a new upload replaces it at the same URL,
+// so a browser that downloaded the last build could hand it out again. The zip's hash in the link
+// gives every build a link of its own.
+function versioned(url, build) {
+  if (!url) return null;
+  const link = new URL(url);
+  link.searchParams.set('v', build.sha256.slice(0, 12));
+  return link.href;
+}
+
 const data = {
   version: manifest.version,
   builds: builds.map((b) => ({
@@ -98,7 +108,7 @@ const data = {
     sha256: b.sha256,
     serverUrl: b.serverUrl,
     builtAt: b.builtAt,
-    url: args.upload ? upload(b) : baseUrl ? new URL(b.file, baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`).href : null,
+    url: versioned(args.upload ? upload(b) : baseUrl ? new URL(b.file, baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`).href : null, b),
   })),
   pricing: {
     payments: config.payments,
