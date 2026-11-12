@@ -75,6 +75,11 @@ const bubble = () =>
     return { visible: !b.hidden, text: b.innerText, className: b.className };
   });
 const near = (a, b, tolerance) => Math.abs(a.x - b.x) <= tolerance && Math.abs(a.y - b.y) <= tolerance;
+const bubblePlace = () =>
+  page.evaluate(() => {
+    const b = document.getElementById('goat-bubble');
+    return { x: parseFloat(b.style.left), y: parseFloat(b.style.top) };
+  });
 
 async function until(fn, what, timeout = 4000) {
   const end = Date.now() + timeout;
@@ -183,6 +188,11 @@ await check('guide: flies to step 1, tip on the target, ring centred, bubble wit
   assert.equal((await ui()).thinking, false);
   assert.equal((await ui()).clickThrough, true, 'click-through while waiting on the step');
   await shot('ui-03-step1');
+  const placed = await bubblePlace();
+  await emit({ type: 'cursor', x: 1100, y: 700 });
+  await sleep(250);
+  assert.deepEqual(await bubblePlace(), placed, 'the step bubble stays by its target');
+  assert.ok(near(await tip(), STEPS[0], 0.5), 'the cursor stays parked on the target');
 });
 
 await check('Next moves to step 2', async () => {
@@ -226,6 +236,22 @@ await check('LLM reply: answer bubble with "<model> · running on this laptop"',
   await shot('ui-04-llm');
 });
 
+await check('the answer bubble follows the cursor, lets clicks through and hides after a reading time', async () => {
+  await emit({ type: 'cursor', x: 300, y: 300 });
+  await until(async () => near(await tip(), { x: 314, y: 316 }, 0.5), 'the cursor to settle');
+  await until(async () => near(await bubblePlace(), { x: 338, y: 338 }, 0.5), 'the bubble to follow the cursor');
+  const look = await page.evaluate(() => {
+    const b = document.getElementById('goat-bubble');
+    return { pointerEvents: getComputedStyle(b).pointerEvents, closeButtons: b.querySelectorAll('.close').length };
+  });
+  assert.deepEqual(look, { pointerEvents: 'none', closeButtons: 0 });
+  const s = await ui();
+  assert.equal(s.bubble.follow, true);
+  assert.ok(s.bubble.ms >= 7000 && s.bubble.ms <= 30000, `hides after ${s.bubble.ms} ms`);
+  assert.equal(s.clickThrough, true);
+  await shot('ui-04b-llm-follows');
+});
+
 await check('errors show in a red bubble', async () => {
   await setReply('ask', ERROR_REPLY);
   await askVia('why do issues need a photo?');
@@ -234,6 +260,7 @@ await check('errors show in a red bubble', async () => {
     return x.visible && /ollama pull/.test(x.text) && x;
   }, 'the error bubble');
   assert.match(b.className, /\berror\b/);
+  assert.match(b.className, /\bfollowing\b/);
   const colour = await page.evaluate(() => getComputedStyle(document.getElementById('goat-bubble')).backgroundColor);
   assert.equal(colour, 'rgb(254, 242, 242)');
   await shot('ui-05-error');

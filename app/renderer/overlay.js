@@ -109,6 +109,7 @@
       state.pos = { x: Math.abs(tx - nx) < 0.1 ? tx : nx, y: Math.abs(ty - ny) < 0.1 ? ty : ny };
       renderCursor();
     }
+    trackBubble();
     requestAnimationFrame(frame);
   }
 
@@ -176,29 +177,46 @@
 
   // ---------- bubble ----------
   let bubbleTimer = null;
+  let bubbleFollow = false;
+  let bubbleSize = { w: 0, h: 0 };
+  let bubbleAt = { x: NaN, y: NaN };
+  const readingMs = (text) => clamp(5000 + String(text || '').length * 55, 7000, 30000);
+
   function placeBubble(at) {
     const b = els.bubble;
-    const w = b.offsetWidth;
-    const h = b.offsetHeight;
+    const { w, h } = bubbleSize;
     let x = at.x + 24;
     let y = at.y + 22;
     if (x + w > window.innerWidth - 8) x = at.x - w - 16;
     if (y + h > window.innerHeight - 8) y = at.y - h - 12;
     b.style.left = `${clamp(x, 8, Math.max(8, window.innerWidth - w - 8))}px`;
     b.style.top = `${clamp(y, 8, Math.max(8, window.innerHeight - h - 8))}px`;
+    bubbleAt = { x: at.x, y: at.y };
   }
 
-  // opts: { kind, text, intro, meta, step, total, next, nextLabel, at, ms, onAction }
+  // Following bubbles ride beside the blue cursor; called every frame.
+  function trackBubble() {
+    if (!bubbleFollow || els.bubble.hidden) return;
+    if (bubbleAt.x === state.pos.x && bubbleAt.y === state.pos.y) return;
+    placeBubble(state.pos);
+  }
+
+  // opts: { kind, text, intro, meta, step, total, next, nextLabel, at, ms, follow, onAction }
+  // follow: ride beside the blue cursor. A following bubble can't be reached with the mouse, so
+  // it lets clicks through, has no Close button and hides after a reading time (or Esc).
   function showBubble(opts = {}) {
     const b = els.bubble;
+    const follow = Boolean(opts.follow);
     clearTimeout(bubbleTimer);
-    b.className = `bubble interactive${opts.kind ? ` ${opts.kind}` : ''}`;
+    b.className = `bubble ${follow ? 'following' : 'interactive'}${opts.kind ? ` ${opts.kind}` : ''}`;
     b.replaceChildren();
-    const close = el('button', 'close', '×');
-    close.type = 'button';
-    close.dataset.action = 'close';
-    close.setAttribute('aria-label', 'Close');
-    b.append(close);
+    if (!follow) {
+      const close = el('button', 'close', '×');
+      close.type = 'button';
+      close.dataset.action = 'close';
+      close.setAttribute('aria-label', 'Close');
+      b.append(close);
+    }
     if (opts.intro) b.append(el('div', 'intro', opts.intro));
     b.append(el('div', 'text', opts.text || ''));
     if (opts.meta) b.append(el('div', 'meta', opts.meta));
@@ -220,15 +238,19 @@
       else if (button.dataset.action === 'close') hideBubble();
     };
     b.hidden = false;
-    placeBubble(opts.at || state.pos);
-    if (opts.ms) bubbleTimer = setTimeout(hideBubble, opts.ms);
-    state.bubble = { kind: opts.kind || 'info' };
+    bubbleSize = { w: b.offsetWidth, h: b.offsetHeight };
+    bubbleFollow = follow;
+    placeBubble(follow ? state.pos : opts.at || state.pos);
+    const ms = opts.ms ?? (follow ? readingMs(opts.text) : 0);
+    if (ms) bubbleTimer = setTimeout(hideBubble, ms);
+    state.bubble = { kind: opts.kind || 'info', follow, ms };
     updateClickThrough();
     emit('bubble', { kind: opts.kind || 'info', text: opts.text || '' });
     return b;
   }
   function hideBubble() {
     clearTimeout(bubbleTimer);
+    bubbleFollow = false;
     els.bubble.hidden = true;
     els.bubble.onclick = null;
     state.bubble = null;
@@ -404,14 +426,14 @@
   function handleReply(reply) {
     emit('reply', reply);
     if (!reply || reply.error) {
-      showBubble({ kind: 'error', text: (reply && reply.message) || 'Something went wrong.', at: state.pos });
+      showBubble({ kind: 'error', text: (reply && reply.message) || 'Something went wrong.', follow: true });
       return;
     }
     if (reply.source === 'guide' && reply.guide && Array.isArray(reply.guide.steps) && reply.guide.steps.length) {
       playGuide(reply.guide);
       return;
     }
-    showBubble({ kind: 'answer', text: reply.say || '…', meta: reply.model ? `${reply.model} · running on this laptop` : '', at: state.pos });
+    showBubble({ kind: 'answer', text: reply.say || '…', meta: reply.model ? `${reply.model} · running on this laptop` : '', follow: true });
     speak(reply.say);
   }
 
@@ -468,8 +490,9 @@
   function greet() {
     if (state.bubble || state.panel || run) return; // never cover something the user asked for
     const key = (state.info.hotkeys && state.info.hotkeys.ask) || 'Ctrl+Option+G';
-    const at = state.sys ? state.pos : { x: window.innerWidth / 2 - 160, y: 90 };
-    showBubble({ kind: 'greeting', text: `Hi, I'm GOAT. Press ${key} to ask me anything.`, at, ms: 8000 });
+    const text = `Hi, I'm GOAT. Press ${key} to ask me anything.`;
+    if (state.sys) showBubble({ kind: 'greeting', text, follow: true, ms: 8000 });
+    else showBubble({ kind: 'greeting', text, at: { x: window.innerWidth / 2 - 160, y: 90 }, ms: 8000 });
   }
 
   window.GOATUI = {
