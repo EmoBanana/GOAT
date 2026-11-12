@@ -395,6 +395,79 @@ await check('recorder: Preview plays the recording, then the form comes back as 
   await until(async () => (await ui()).panel === null, 'the second Esc to discard');
 });
 
+const hlBox = () =>
+  page.evaluate(() => {
+    const el = document.querySelector('.hl-rect');
+    const r = el.getBoundingClientRect();
+    return { hidden: el.hidden, locked: el.classList.contains('locked'), x: r.left, y: r.top, width: r.width, height: r.height };
+  });
+
+await check('highlight: a drag draws the rectangle, locks it, and the ask carries the region', async () => {
+  await setReply('ask', { ...LLM_REPLY, say: 'A pile cap detail with four piles.', image: true }, 300);
+  await page.evaluate(() => (window.__calls.length = 0));
+  await emit({ type: 'open-ask', context: { app: 'Bluebeam Revu', title: 'Drawing.pdf' } });
+  await page.waitForSelector('#goat-ask-input', { state: 'visible' });
+  assert.equal(await page.evaluate(() => getComputedStyle(document.getElementById('goat-backdrop')).cursor), 'crosshair');
+  await page.mouse.move(100, 500);
+  await page.mouse.down();
+  await page.mouse.move(250, 600, { steps: 5 });
+  const mid = await hlBox();
+  assert.deepEqual(mid, { hidden: false, locked: false, x: 100, y: 500, width: 150, height: 100 });
+  assert.equal(await page.evaluate(() => getComputedStyle(document.getElementById('goat-panel')).visibility), 'hidden');
+  await shot('ui-08-highlight-drag');
+  await page.mouse.move(400, 700, { steps: 5 });
+  await page.mouse.up();
+  assert.deepEqual(await hlBox(), { hidden: false, locked: true, x: 100, y: 500, width: 300, height: 200 });
+  assert.equal(await page.locator('#goat-panel').isVisible(), true, 'releasing brings the panel back');
+  assert.equal(await page.locator('.ask-context').innerText(), 'Asking about the highlighted area');
+  await until(() => page.evaluate(() => document.activeElement && document.activeElement.id === 'goat-ask-input'), 'input focus');
+  await shot('ui-09-highlight-locked');
+  await page.keyboard.type('what is this?');
+  await page.keyboard.press('Enter');
+  const [askCall] = await until(async () => {
+    const c = await calls('ask');
+    return c.length && c;
+  }, 'goat.ask');
+  assert.deepEqual(askCall.args, ['what is this?', { region: { x: 100, y: 500, width: 300, height: 200 } }]);
+  assert.equal((await hlBox()).hidden, false, 'the rectangle stays while GOAT looks at it');
+  const b = await until(async () => {
+    const x = await bubble();
+    return x.visible && /pile cap/.test(x.text) && x;
+  }, 'the answer');
+  assert.match(b.text, /read the highlighted area/);
+  assert.equal((await hlBox()).hidden, true);
+});
+
+await check('highlight: a tiny drag or a click is not a highlight, and Esc cancels one', async () => {
+  await setReply('ask', LLM_REPLY);
+  await emit({ type: 'open-ask', context: {} });
+  await page.waitForSelector('#goat-ask-input', { state: 'visible' });
+  await page.mouse.move(100, 100);
+  await page.mouse.down();
+  await page.mouse.move(104, 103);
+  await page.mouse.up();
+  await until(async () => (await ui()).panel === null, 'a click to close the panel');
+  assert.equal((await hlBox()).hidden, true, 'no rectangle after a tiny drag');
+  await emit({ type: 'open-ask', context: {} });
+  await page.waitForSelector('#goat-ask-input', { state: 'visible' });
+  await page.mouse.move(200, 200);
+  await page.mouse.down();
+  await page.mouse.move(420, 380, { steps: 4 });
+  await page.mouse.up();
+  const afterDrag = await hlBox();
+  assert.equal(afterDrag.locked, true, `locked after a real drag: ${JSON.stringify(afterDrag)} panel=${JSON.stringify((await ui()).panel)}`);
+  await page.keyboard.press('Escape');
+  await until(async () => (await hlBox()).hidden, 'Esc to cancel the highlight');
+  assert.equal((await ui()).panel, null);
+  await page.evaluate(() => (window.__calls.length = 0));
+  await askVia('plain question');
+  const [plain] = await until(async () => {
+    const c = await calls('ask');
+    return c.length && c;
+  }, 'a plain ask');
+  assert.equal(plain.args[1], null, 'a plain ask carries no region');
+});
+
 await check('no page errors or CSP violations', async () => {
   assert.deepEqual(pageErrors, []);
   assert.deepEqual(await page.evaluate(() => window.__csp), []);

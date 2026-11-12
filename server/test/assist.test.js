@@ -323,3 +323,56 @@ test('plainText strips markdown the model slips in', () => {
   assert.equal(isSmallTalk('Hi GOAT!'), true);
   assert.equal(isSmallTalk('hi, how do I log an issue?'), false);
 });
+
+describe('highlighted region asks', () => {
+  // 1x1 PNG
+  const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+  const MOCK_MCP = fileURLToPath(new URL('./helpers/mock-mcp-server.js', import.meta.url));
+
+  test('the image goes to Gemma on the user message, skipping guides and web tools', async () => {
+    const ollama = await startMockOllama({ toolCalls: () => [{ function: { name: 'brave_web_search', arguments: { query: 'x' } } }], reply: () => 'A pile cap detail.' });
+    const srv = await startTestServer({
+      ollamaUrl: ollama.url,
+      mcp: { config: { mcpServers: { search: { command: process.execPath, args: [MOCK_MCP] } } } },
+    });
+    try {
+      const r = await srv.request('POST', '/api/assist', {
+        body: { question: 'how do I log an issue about this?', image: `data:image/png;base64,${PNG}`, context: { ...inForma, region: { x: 10, y: 20, width: 300, height: 200 } } },
+      });
+      assert.equal(r.status, 200);
+      assert.equal(r.body.source, 'llm', 'no guide, even though the words match one');
+      assert.equal(r.body.image, true);
+      assert.equal(r.body.say, 'A pile cap detail.');
+      const [call] = ollama.chats();
+      assert.equal(ollama.chats().length, 1);
+      assert.equal(call.body.tools, undefined, 'screen contents never go to web tools');
+      assert.equal(call.body.think, false);
+      const user = call.body.messages[1];
+      assert.deepEqual(user.images, [PNG]);
+      assert.match(user.content, /^The user highlighted this part of the screen \(300×200 points\)/);
+    } finally {
+      await srv.close();
+      await ollama.close();
+    }
+  });
+
+  test('bad or oversized images are rejected before the model', async () => {
+    const ollama = await startMockOllama();
+    const srv = await startTestServer({ ollamaUrl: ollama.url });
+    try {
+      const notPng = await srv.request('POST', '/api/assist', { body: { question: 'what is this?', image: Buffer.from('hello').toString('base64') } });
+      assert.equal(notPng.status, 400);
+      assert.equal(notPng.body.error, 'bad_image');
+      const junk = await srv.request('POST', '/api/assist', { body: { question: 'what is this?', image: '%%%' } });
+      assert.equal(junk.body.error, 'bad_image');
+      const big = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47]), Buffer.alloc(2 * 1024 * 1024)]).toString('base64');
+      const tooBig = await srv.request('POST', '/api/assist', { body: { question: 'what is this?', image: big } });
+      assert.equal(tooBig.status, 413);
+      assert.equal(tooBig.body.error, 'image_too_large');
+      assert.equal(ollama.chats().length, 0);
+    } finally {
+      await srv.close();
+      await ollama.close();
+    }
+  });
+});

@@ -41,7 +41,7 @@ export function createApi({ baseUrl, userId, fetchImpl = globalThis.fetch, timeo
     baseUrl,
     userId,
     request,
-    assist: ({ question, context }) => request('POST', '/api/assist', { question, context }),
+    assist: ({ question, context, image }) => request('POST', '/api/assist', { question, context, ...(image ? { image } : {}) }),
     health: () => request('GET', '/api/health', undefined, 3000),
     me: () => request('GET', '/api/me', undefined, 5000),
     saveGuide: (guide) => request('POST', '/api/guides', guide, 10_000),

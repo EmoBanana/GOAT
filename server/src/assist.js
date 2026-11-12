@@ -19,6 +19,26 @@ export const TOOLS_PROMPT = [
 
 export const CONTEXT_CAP = 2600;
 export const MAX_TOOL_ROUNDS = 2;
+export const IMAGE_MAX_BYTES = 2 * 1024 * 1024;
+
+// A highlighted region arrives as a base64 PNG (or JPEG), at most 2 MB.
+export function checkImage(image) {
+  if (typeof image !== 'string') throw new HttpError(400, 'bad_image', 'The image must be a base64 PNG.');
+  const b64 = image.replace(/^data:image\/[a-z]+;base64,/i, '').replace(/\s+/g, '');
+  if (!b64 || !/^[A-Za-z0-9+/]+=*$/.test(b64)) throw new HttpError(400, 'bad_image', 'The image must be a base64 PNG.');
+  const bytes = Buffer.from(b64, 'base64');
+  if (bytes.length > IMAGE_MAX_BYTES) throw new HttpError(413, 'image_too_large', 'Highlight a smaller area (the image must be under 2 MB).');
+  const png = bytes.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+  const jpeg = bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  if (!png && !jpeg) throw new HttpError(400, 'bad_image', 'The image must be a PNG or JPEG.');
+  return b64;
+}
+
+function regionNote(region) {
+  const w = Math.round(Number(region?.width));
+  const h = Math.round(Number(region?.height));
+  return Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0 ? ` (${w}×${h} points)` : '';
+}
 
 // Greetings and thanks get a quick answer: no context, no thinking, no tools.
 const SMALL_TALK =
@@ -113,15 +133,17 @@ function toolArgs(call) {
 // Gemma answers fast when the SOPs or guides cover the question (or it's small talk), and
 // thinks first, with MCP tools such as web search, when nothing relevant was found.
 export function createAssist({ config, guides, docs, llm, mcp = null }) {
-  return async function assist({ question, context, tier = 'free' }) {
+  return async function assist({ question, context, tier = 'free', image }) {
     const started = Date.now();
     const q = typeof question === 'string' ? question.trim() : '';
     if (!q) throw new HttpError(400, 'empty_question', 'Ask me something first.');
     if (q.length > 1000) throw new HttpError(400, 'question_too_long', 'Keep the question under 1,000 characters.');
     const ctx = cleanContext(context);
+    const picture = image === undefined || image === null || image === '' ? null : checkImage(image);
     const base = { id: crypto.randomUUID(), tier };
 
-    if (!wantsExplanation(q)) {
+    // A highlighted region always goes to the model: it's a question about what's on screen.
+    if (!picture && !wantsExplanation(q)) {
       const hit = matchGuide(q, guides.list(), ctx);
       if (hit) {
         const g = hit.guide;
@@ -138,16 +160,20 @@ export function createAssist({ config, guides, docs, llm, mcp = null }) {
       }
     }
 
-    const smallTalk = isSmallTalk(q);
+    const smallTalk = !picture && isSmallTalk(q);
     const found = smallTalk ? { text: '', sources: [], relevant: true } : buildContext({ question: q, context: ctx, docs, guides });
     const mode = config.think || 'auto';
-    const deep = !smallTalk && (mode === 'always' || (mode === 'auto' && !found.relevant));
-    const tools = deep && mcp ? await mcp.tools() : [];
+    // Screen contents never go to web tools, and region asks stay quick unless thinking is always on.
+    const deep = picture ? mode === 'always' : !smallTalk && (mode === 'always' || (mode === 'auto' && !found.relevant));
+    const tools = deep && !picture && mcp ? await mcp.tools() : [];
 
     const system = [SYSTEM_PROMPT, deep && DEEP_PROMPT, tools.length && TOOLS_PROMPT].filter(Boolean).join(' ');
+    const userText = smallTalk ? q : userMessage(q, ctx, found.text, { hideWindow: tools.length > 0 });
     const messages = [
       { role: 'system', content: system },
-      { role: 'user', content: smallTalk ? q : userMessage(q, ctx, found.text, { hideWindow: tools.length > 0 }) },
+      picture
+        ? { role: 'user', content: `The user highlighted this part of the screen${regionNote(context?.region)}. The image shows it.\n\n${userText}`, images: [picture] }
+        : { role: 'user', content: userText },
     ];
 
     // Pro tries its model first and falls back to the base model if it isn't pulled.
@@ -204,6 +230,7 @@ export function createAssist({ config, guides, docs, llm, mcp = null }) {
       guide: null,
       model,
       thought,
+      image: Boolean(picture),
       searched: searched.map(({ tool, query }) => ({ tool, query })),
       sources: [...found.sources, ...web],
       latencyMs: Date.now() - started,

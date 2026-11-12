@@ -54,8 +54,8 @@ export function createApp({ config, guides, docs, llm, users, assist, mcp, logge
   });
 
   app.post('/api/assist', async (req, res) => {
-    const { question, context } = req.body || {};
-    res.json(await assist({ question, context, tier: users.tier(req.userId), userId: req.userId }));
+    const { question, context, image } = req.body || {};
+    res.json(await assist({ question, context, image, tier: users.tier(req.userId), userId: req.userId }));
   });
 
   app.use('/api', (req) => {

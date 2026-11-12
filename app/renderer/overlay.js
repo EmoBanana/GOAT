@@ -400,6 +400,23 @@
   }
 
   // ---------- ask ----------
+  // Feature scripts add data to the next ask (e.g. the highlighted region).
+  const askExtras = [];
+  function addAskExtra(provider) {
+    askExtras.push(provider);
+  }
+  function collectAskExtras() {
+    const extra = {};
+    for (const provider of askExtras) {
+      try {
+        Object.assign(extra, provider() || {});
+      } catch (err) {
+        console.error(err);
+      }
+    }
+    return Object.keys(extra).length ? extra : undefined;
+  }
+
   const ASK_HTML =
     '<form class="ask-form" autocomplete="off">' +
     `<div class="ask-row"><span class="ask-icon">${ART.cursorSvg()}</span>` +
@@ -418,8 +435,9 @@
         event.preventDefault();
         const question = p.querySelector('#goat-ask-input').value.trim();
         if (!question) return;
+        const extra = collectAskExtras(); // before closing: closing clears the highlight
         closePanel();
-        ask(question);
+        ask(question, extra);
       },
     });
     const ctx = opts.context || {};
@@ -447,7 +465,12 @@
       return;
     }
     const meta = reply.model
-      ? [`${reply.model} · running on this laptop`, reply.thought && 'thought it through', reply.searched && reply.searched.length && 'searched the web']
+      ? [
+          reply.image && 'read the highlighted area',
+          `${reply.model} · running on this laptop`,
+          reply.thought && 'thought it through',
+          reply.searched && reply.searched.length && 'searched the web',
+        ]
           .filter(Boolean)
           .join(' · ')
       : '';
@@ -550,6 +573,7 @@
       state.voice = Boolean(on);
     },
     resumeFollow,
+    addAskExtra,
     el,
     cursorEl: els.cursor,
     info: () => state.info,

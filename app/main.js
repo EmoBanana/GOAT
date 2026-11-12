@@ -2,6 +2,8 @@ import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, screen,
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sampleActiveWindow } from './lib/active-window.js';
+import { captureRegion } from './lib/capture.js';
+import { validRegion } from './lib/region.js';
 import { createApi } from './lib/api.js';
 import { getUserId } from './lib/identity.js';
 import { buildGuide, createRecorder } from './lib/recorder.js';
@@ -182,7 +184,17 @@ function registerIpc() {
   ipcMain.handle('goat:ask', async (event, payload) => {
     if (!fromOverlay(event)) return { error: 'forbidden', message: 'Unknown sender.' };
     const question = typeof payload?.question === 'string' ? payload.question.slice(0, 1000) : '';
-    const reply = await api.assist({ question, context: askContext });
+    // A highlighted region: read just that part of the screen, only now, and never store it.
+    const region = validRegion(payload?.region);
+    let image;
+    if (region) {
+      try {
+        image = await captureRegion(region, { win, fake: process.env.GOAT_FAKE_CAPTURE === '1' });
+      } catch (err) {
+        return { error: err.code || 'capture_failed', message: err.message };
+      }
+    }
+    const reply = await api.assist({ question, context: region ? { ...askContext, region } : askContext, image });
     log(reply.error ? `ask failed: ${reply.error}` : `ask -> ${reply.source}${reply.guide ? ` (${reply.guide.id})` : ''} in ${reply.latencyMs} ms`);
     return reply;
   });

@@ -241,3 +241,18 @@ body {
 }
 .panel button.primary { border-color: var(--blue); background: var(--blue); color: #fff; }
 .panel button:disabled { opacity: 0.6; cursor: default; }
+
+/* Highlight to scope the ask. */
+.backdrop.crosshair { cursor: crosshair; }
+.panel.hl-hidden { visibility: hidden; }
+.hl-rect {
+  position: fixed;
+  z-index: 46;
+  border: 2px solid var(--blue);
+  border-radius: 4px;
+  background: rgba(37, 99, 235, 0.08);
+  box-shadow: 0 0 0 9999px rgba(15, 23, 42, 0.18);
+  pointer-events: none;
+}
+.hl-rect.locked { border-style: dashed; box-shadow: none; }
+.ask-context.scoped { color: var(--blue); font-weight: 600; }

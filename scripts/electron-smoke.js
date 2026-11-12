@@ -26,6 +26,7 @@ const env = {
   GOAT_TEST_HOOKS: '1',
   GOAT_FAKE_WINDOW: 'Google Chrome|Forma Build - Issues',
   GOAT_USER: 'e2e-tester',
+  GOAT_FAKE_CAPTURE: '1', // tests can't grant Screen Recording
 };
 delete env.ELECTRON_RUN_AS_NODE; // see Gotchas: VS Code extension shells set it
 
@@ -141,6 +142,23 @@ try {
     );
     assert.match(await page.locator('#goat-bubble').innerText(), /Open the File menu\./);
     await page.keyboard.press('Escape');
+  });
+
+  await check('a highlighted area goes from main to Gemma as an image', async () => {
+    ollama.calls.length = 0;
+    await app.evaluate(() => globalThis.__goatTest.openAsk());
+    await page.waitForSelector('#goat-ask-input', { state: 'visible' });
+    await page.mouse.move(300, 300);
+    await page.mouse.down();
+    await page.mouse.move(500, 450, { steps: 6 });
+    await page.mouse.up();
+    await until(() => page.evaluate(() => document.querySelector('.ask-context')?.textContent === 'Asking about the highlighted area'), 'the locked highlight');
+    await page.keyboard.type('what is this?');
+    await page.keyboard.press('Enter');
+    await until(() => page.evaluate(() => /read the highlighted area/.test(document.getElementById('goat-bubble').innerText)), 'the answer about the area');
+    const [chat] = ollama.chats();
+    assert.equal(chat.body.messages[1].images.length, 1);
+    assert.match(chat.body.messages[1].content, /highlighted this part of the screen \(200×150 points\)/);
   });
 
   await check('no page errors', async () => {
