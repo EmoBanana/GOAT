@@ -1,5 +1,5 @@
 import { HttpError } from '../errors.js';
-import { atomicToUsd, isAddress, roundMoney, usdToAtomic } from './money.js';
+import { atomicToUsd, isAddress, roundMoney, roundPrice, usdToAtomic } from './money.js';
 
 // The app sends its wallet address (never a key) in x-goat-wallet. The server links it to the
 // user, and in x402-local a new wallet gets the welcome credit once.
@@ -20,6 +20,7 @@ export function mountWallet(app, { config, users, payments, topups }) {
     const atomic = user.wallet && payments ? await payments.balance(user.wallet) : null;
     const usd = atomic === null ? null : atomicToUsd(atomic);
     const myr = (v) => roundMoney(v * config.myrPerUsd);
+    const price = (v) => roundPrice(v * config.myrPerUsd);
     return {
       mode: config.payments,
       network: config.network,
@@ -28,9 +29,9 @@ export function mountWallet(app, { config, users, payments, topups }) {
       balanceMyr: usd === null ? null : myr(usd),
       myrPerUsd: config.myrPerUsd,
       priceUsd: config.priceUsd,
-      priceMyr: myr(config.priceUsd),
+      priceMyr: price(config.priceUsd),
       proPriceUsd: config.proPriceUsd,
-      proPriceMyr: myr(config.proPriceUsd),
+      proPriceMyr: price(config.proPriceUsd),
       proDays: config.proDays,
       pro: users.isPro(userId),
       proUntil: user.proUntil || null,

@@ -139,6 +139,31 @@ describe('x402 pay-per-assist (x402-local)', () => {
   });
 });
 
+test('prices under a cent: a tenth of a cent per assist, and the ringgit price keeps its decimals', async () => {
+  const ollama = await startMockOllama();
+  const srv = await startTestServer({ ollamaUrl: ollama.url, env: { ...PAID, GOAT_PRICE_USD: '0.001', GOAT_PRO_PRICE_USD: '0.1' } });
+  try {
+    const w = wallet('cheap');
+    const view = (await w.plain(`${srv.url}/api/wallet`)).body;
+    assert.equal(view.priceUsd, 0.001);
+    assert.equal(view.priceMyr, 0.0042, 'not RM 0.00');
+    assert.equal(view.proPriceMyr, 0.42);
+    const amount = async (route, body) => {
+      const r = await w.plain(`${srv.url}${route}`, body);
+      assert.equal(r.status, 402);
+      return JSON.parse(Buffer.from(r.headers.get('payment-required'), 'base64').toString()).accepts[0].amount;
+    };
+    assert.equal(await amount('/api/assist', { question: 'how do I log an issue' }), '1000', '$0.001');
+    assert.equal(await amount('/api/pro/upgrade', {}), '100000', '$0.10');
+    const r = await w.paid(`${srv.url}/api/assist`, { question: 'how do I log an issue' });
+    assert.equal(r.status, 200);
+    assert.equal((await w.plain(`${srv.url}/api/wallet`)).body.balanceUsd, Math.round((2 / 4.2 - 0.001) * 10_000) / 10_000);
+  } finally {
+    await srv.close();
+    await ollama.close();
+  }
+});
+
 test('the local facilitator checks the signature, recipient, amount and expiry', async () => {
   const account = privateKeyToAccount(generatePrivateKey());
   const payTo = privateKeyToAccount(generatePrivateKey()).address;

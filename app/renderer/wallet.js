@@ -10,7 +10,9 @@
 
   let wallet = null;
   const rm = (v) => (v === null || v === undefined ? 'RM –' : `RM ${Number(v).toFixed(2)}`);
-  const cents = () => Math.max(1, Math.round(((wallet && wallet.priceUsd) || 0.01) * 100));
+  // Prices can be under a cent or a sen: "Paid 0.1¢", "RM 0.0042 per assist".
+  const price = (v) => (v > 0 && v < 0.01 ? `RM ${Number(Number(v).toFixed(4))}` : rm(v));
+  const cents = () => Number((((wallet && wallet.priceUsd) || 0.01) * 100).toFixed(2));
 
   function chipText() {
     if (!wallet || wallet.error || wallet.mode === 'off') return null;
@@ -95,11 +97,11 @@
   function render(p) {
     const w = wallet || {};
     p.querySelector('.wallet-balance').textContent = w.mode === 'off' ? 'Free' : rm(w.balanceMyr);
-    p.querySelector('.wallet-sub').textContent = w.mode === 'off' ? 'Assists are free on this server.' : `${rm(w.priceMyr)} per assist`;
+    p.querySelector('.wallet-sub').textContent = w.mode === 'off' ? 'Assists are free on this server.' : `${price(w.priceMyr)} per assist`;
     const until = w.proUntil ? new Date(w.proUntil).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '';
     p.querySelector('.wallet-pro').textContent = w.pro
       ? `Pro until ${until}: unlimited assists and voice.`
-      : `Pro: unlimited assists and voice, ${rm(w.proPriceMyr)} for ${w.proDays || 30} days.`;
+      : `Pro: unlimited assists and voice, ${price(w.proPriceMyr)} for ${w.proDays || 30} days.`;
     p.querySelector('[data-action="upgrade"]').textContent = w.pro ? 'Extend Pro' : 'Upgrade to Pro';
     p.querySelector('[data-action="topup"]').disabled = w.mode === 'off';
   }

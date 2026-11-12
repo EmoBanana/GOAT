@@ -614,6 +614,21 @@ await check('a paid answer flies a coin and says "Paid 1¢"', async () => {
   await setReply('ask', LLM_REPLY);
 });
 
+await check('a price under a cent shows as "Paid 0.1¢" and "RM 0.0042 per assist"', async () => {
+  await page.evaluate(() => new Promise((done) => setTimeout(done, 3600))); // the "Paid 1¢" toast goes first
+  await setReply('wallet', { ...WALLET, priceUsd: 0.001, priceMyr: 0.0042, proPriceUsd: 0.1, proPriceMyr: 0.42 });
+  await setReply('ask', { ...LLM_REPLY, payment: { success: true, transaction: `0x${'c'.repeat(64)}`, network: 'eip155:84532', payer: WALLET.address } });
+  await askVia('why do issues need a photo?');
+  await until(() => page.evaluate(() => /Paid 0\.1¢/.test(document.getElementById('goat-toasts').innerText)), 'the payment toast');
+  await setReply('ask', LLM_REPLY);
+  await emit({ type: 'open-wallet' });
+  await page.waitForSelector('.wallet-sub', { state: 'visible' });
+  await until(async () => (await page.locator('.wallet-sub').innerText()) === 'RM 0.0042 per assist', 'the price under a sen');
+  assert.match(await page.locator('.wallet-pro').innerText(), /RM 0\.42 for 30 days/);
+  await page.click('[data-action="close"]');
+  await setReply('wallet', WALLET);
+});
+
 function wavInfo(b64) {
   const b = Buffer.from(b64, 'base64');
   return {

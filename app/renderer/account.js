@@ -10,6 +10,7 @@
 
   let info = null; // { signedIn, account: { method, label, how, short }, userId }
   const rm = (v) => (v === null || v === undefined ? 'RM –' : `RM ${Number(v).toFixed(2)}`);
+  const price = (v) => (v > 0 && v < 0.01 ? `RM ${Number(Number(v).toFixed(4))}` : rm(v)); // under a sen: RM 0.0042
   const isOpen = (name) => (ui.state().panel || {}).name === name;
 
   function showError(p, text) {
@@ -103,7 +104,7 @@
     if (!w || w.error) return;
     p.querySelector('.acct-balance').textContent = w.mode === 'off' ? 'Free' : rm(w.balanceMyr);
     const until = w.proUntil ? new Date(w.proUntil).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '';
-    p.querySelector('.acct-pro').textContent = w.pro ? `Pro until ${until}` : w.mode === 'off' ? '' : `${rm(w.priceMyr)} per assist`;
+    p.querySelector('.acct-pro').textContent = w.pro ? `Pro until ${until}` : w.mode === 'off' ? '' : `${price(w.priceMyr)} per assist`;
   }
 
   function renderChats(p, chats) {
