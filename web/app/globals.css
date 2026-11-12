@@ -281,6 +281,15 @@ kbd {
   position: relative;
   top: 0.14em;
 }
+/* Beside the paragraph (two columns), the headline starts well above the paragraph's first line
+   (0.36em, about 24px at full size), as the user set it. Only the headline moves: relative, so
+   the demo under it stays put. */
+@media (min-width: 960px) {
+  .hero h1 {
+    position: relative;
+    top: -0.36em;
+  }
+}
 .hero-side {
   display: flex;
   flex-direction: column;
