@@ -614,3 +614,53 @@ body {
 .panel.dock-right .wallet-tx-label { font-weight: 700; }
 .panel.dock-right .wallet-tx-meta { color: var(--nb-soft); }
 .panel.dock-right .wallet-tx-open { color: var(--nb-ink); }
+
+/* A clip before a spoken answer ("What's MCP?"): the screen goes cloudy, the video plays in the
+   middle, and the answer is spoken once it ends. Above everything; a click skips it. */
+.clip {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  cursor: pointer;
+  background:
+    radial-gradient(60% 50% at 18% 22%, rgba(255, 255, 255, 0.96), transparent 70%),
+    radial-gradient(55% 45% at 82% 28%, rgba(241, 246, 255, 0.94), transparent 70%),
+    radial-gradient(60% 50% at 28% 82%, rgba(246, 249, 255, 0.94), transparent 70%),
+    radial-gradient(55% 50% at 80% 80%, rgba(255, 255, 255, 0.96), transparent 70%),
+    rgba(229, 237, 249, 0.82);
+  animation: clip-in 420ms ease-out both;
+}
+.clip.out { animation: clip-out 380ms ease-in both; }
+.clip-cloud {
+  position: absolute;
+  border-radius: 50%;
+  background: #fff;
+  filter: blur(48px);
+  opacity: 0.85;
+  animation: clip-drift 18s ease-in-out infinite alternate;
+}
+.clip-cloud.a { width: 46vw; height: 30vw; left: -8vw; top: -6vw; }
+.clip-cloud.b { width: 40vw; height: 26vw; right: -10vw; top: 6vh; animation-duration: 22s; }
+.clip-cloud.c { width: 50vw; height: 28vw; left: 8vw; bottom: -12vw; animation-duration: 26s; }
+.clip-cloud.d { width: 36vw; height: 24vw; right: 2vw; bottom: -8vw; animation-duration: 20s; }
+.clip-frame {
+  position: relative;
+  width: min(64vw, calc(70vh * 16 / 9), 1100px);
+  aspect-ratio: 16 / 9;
+  border-radius: 18px;
+  overflow: hidden;
+  background: #000;
+  box-shadow: 0 30px 80px rgba(30, 50, 90, 0.28), 0 0 0 1px rgba(255, 255, 255, 0.75);
+  animation: clip-rise 520ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.clip-frame video { display: block; width: 100%; height: 100%; object-fit: cover; }
+@keyframes clip-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes clip-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes clip-rise { from { opacity: 0; transform: translateY(14px) scale(0.97); } to { opacity: 1; transform: none; } }
+@keyframes clip-drift { from { transform: translate3d(0, 0, 0) scale(1); } to { transform: translate3d(3vw, 1.5vw, 0) scale(1.08); } }
+@media (prefers-reduced-motion: reduce) {
+  .clip, .clip.out, .clip-frame, .clip-cloud { animation: none; }
+}

@@ -873,6 +873,86 @@ await check("voice: GOAT's own voice plays when the server sends one, with no bu
   await setReply('speak', undefined);
 });
 
+await check('voice: "What\'s MCP?" plays its clip on a cloudy screen first, and the answer is spoken once it ends', async () => {
+  // Playwright's Chromium can't play the real H.264 clip; a short WAV plays through the same <video>.
+  const clipFile = path.join(artifacts, 'clip-test.wav');
+  fs.writeFileSync(clipFile, toneWav(1600));
+  await setReply('clipFor', { name: 'MCP', url: pathToFileURL(clipFile).href });
+  await setReply('speak', undefined); // no voice from the server: the Mac's reads the answer
+  await setReply('ask', LLM_REPLY, 300);
+  const clip = () =>
+    page.evaluate(() => {
+      const c = document.querySelector('.clip:not(.out)');
+      if (!c) return { shown: false };
+      const v = c.querySelector('video');
+      const f = c.querySelector('.clip-frame').getBoundingClientRect();
+      return { shown: true, playing: !v.paused, cx: f.left + f.width / 2, cy: f.top + f.height / 2, clouds: c.querySelectorAll('.clip-cloud').length };
+    });
+  const askAloud = (q) =>
+    page.evaluate((question) => {
+      window.GOATUI.setVoice(true);
+      window.__asked = window.GOATUI.ask(question, { voice: true }).finally(() => window.GOATUI.setVoice(false));
+    }, q);
+
+  await spySpeech();
+  await askAloud("What's MCP?");
+  await until(async () => {
+    const s = await clip();
+    return s.shown && s.playing;
+  }, 'the clip to play');
+  await page.evaluate(() => Promise.all(document.querySelector('.clip-frame').getAnimations().map((a) => a.finished)));
+  const shown = await clip();
+  assert.ok(Math.abs(shown.cx - 720) < 2 && Math.abs(shown.cy - 450) < 2, `in the middle of the screen: ${JSON.stringify(shown)}`);
+  assert.equal(shown.clouds, 4);
+  assert.deepEqual((await calls('clipFor')).map((c) => c.args), [["What's MCP?"]]);
+  await until(async () => (await calls('ask')).length === 1, 'the ask, sent at once');
+  await shot('ui-22-clip');
+  await sleep(300);
+  assert.deepEqual(await page.evaluate(() => window.__spoken), [], 'the answer is back, but not a word while the clip plays');
+  await until(async () => !(await clip()).shown, 'the clip to end', 5000);
+  await until(() => page.evaluate(() => window.__spoken.length === 1), 'the answer, spoken after the clip');
+  assert.deepEqual(await page.evaluate(() => window.__spoken), [LLM_REPLY.say]);
+  assert.equal((await bubble()).visible, false);
+  await page.evaluate(() => window.__asked);
+
+  // A click on the clouds skips to the answer.
+  await spySpeech();
+  await askAloud('What is MCP?');
+  await until(async () => (await clip()).shown, 'the clip');
+  await until(async () => (await calls('ask')).length === 1, 'the ask');
+  await page.click('.clip', { position: { x: 40, y: 40 } });
+  await until(() => page.evaluate(() => window.__spoken.length === 1), 'the answer, right away');
+  assert.equal((await clip()).shown, false);
+  await page.evaluate(() => window.__asked);
+
+  // Esc cancels the clip and the answer waiting for it.
+  await spySpeech();
+  await askAloud('What is MCP?');
+  await until(async () => (await clip()).shown, 'the clip');
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => window.__asked);
+  await sleep(300);
+  assert.equal((await clip()).shown, false);
+  assert.deepEqual(await page.evaluate(() => window.__spoken), [], 'nothing said after Esc');
+
+  // A clip that can't play is skipped at once; the answer still comes.
+  await setReply('clipFor', { name: 'MCP', url: pathToFileURL(path.join(artifacts, 'no-such-clip.mp4')).href });
+  await spySpeech();
+  await askAloud('What is MCP?');
+  await until(() => page.evaluate(() => window.__spoken.length === 1), 'the answer without the clip');
+  await page.evaluate(() => window.__asked);
+
+  // Typed, the same question gets no clip and is answered in a bubble.
+  await spySpeech();
+  await askVia("What's MCP?");
+  await until(async () => (await bubble()).visible, 'the answer in a bubble');
+  assert.deepEqual(await calls('clipFor'), []);
+  assert.equal((await clip()).shown, false);
+  await page.keyboard.press('Escape');
+  await setReply('clipFor', undefined);
+  await setReply('ask', LLM_REPLY);
+});
+
 await check('voice: free users are pointed to the Pro upgrade', async () => {
   await setReply('wallet', WALLET);
   await page.evaluate(() => (window.__calls.length = 0));

@@ -8,6 +8,7 @@ import { captureRegion } from './lib/capture.js';
 import { documentHint, documentKind, readDocument } from './lib/doc-context.js';
 import { findTarget, readTargets, targetAt } from './lib/screen-targets.js';
 import { bringUp, frontTab, HOW_TO, placeToOpen, SHOW_ME } from './lib/open-place.js';
+import { clipFor } from './lib/clips.js';
 import { startHoldKeys } from './lib/hold-keys.js';
 import { validRegion } from './lib/region.js';
 import { createApi } from './lib/api.js';
@@ -519,6 +520,8 @@ function registerIpc() {
   ipcMain.handle('goat:wallet', (event) => (fromOverlay(event) ? api.wallet() : { error: 'forbidden' }));
   ipcMain.handle('goat:transcribe', (event, audio) => (fromOverlay(event) && typeof audio === 'string' ? api.transcribe(audio) : { error: 'forbidden' }));
   ipcMain.handle('goat:speak', (event, text) => (fromOverlay(event) && typeof text === 'string' ? api.speak(text) : { error: 'forbidden' }));
+  // A clip to play before a spoken answer ("What's MCP?"), when its file is on this Mac (lib/clips.js).
+  ipcMain.handle('goat:clip-for', (event, question) => (fromOverlay(event) && typeof question === 'string' ? clipFor(question, { dirs: [process.env.GOAT_CLIPS_DIR, path.join(here, '..')] }) : null));
   ipcMain.handle('goat:topup', (event, myr) => (fromOverlay(event) ? api.topup(Number(myr) || 10) : { error: 'forbidden' }));
   ipcMain.handle('goat:upgrade', (event) => (fromOverlay(event) ? api.upgradePro() : { error: 'forbidden' }));
   ipcMain.on('goat:open-link', (event, url) => {

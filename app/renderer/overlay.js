@@ -694,37 +694,46 @@
   // Speaks while voice mode is on (opts.force: always, e.g. guide steps of a spoken question):
   // in GOAT's voice when the server has one, else, or if that fails, in the Mac's.
   // opts.onSilent() runs when neither could say it, so the words can be shown instead.
+  function fetchVoice(text) {
+    return Promise.resolve()
+      .then(() => goat.speak(text))
+      .then((reply) => (reply && typeof reply.audio === 'string' && reply.audio ? decodeClip(reply.audio) : null))
+      .catch(() => null);
+  }
+  // An answer that waits (for a clip to end) gets its voice fetched meanwhile, so it starts at once.
+  let prepared = null; // { text, clip: Promise<AudioBuffer | null> }
+  function prepareSpeech(text) {
+    if (goat.speak && text) prepared = { text, clip: fetchVoice(text) };
+  }
   function speak(text, opts = {}) {
     if ((!state.voice && !opts.force) || !text) return false;
     silence();
     if (!goat.speak) return speakWithMac(text, opts);
     const mine = (speech = { text, node: null });
     emit('speak:wait', { text });
-    Promise.resolve()
-      .then(() => goat.speak(text))
-      .then((reply) => (reply && typeof reply.audio === 'string' && reply.audio ? decodeClip(reply.audio) : null))
-      .catch(() => null)
-      .then((clip) => {
-        if (speech !== mine) return; // stopped meanwhile, or something newer is being said
-        if (!clip) {
-          speech = null;
-          emit('speak:end', { text }); // the wait is over; the Mac's voice starts its own turn
-          if (!speakWithMac(text, opts) && opts.onSilent) opts.onSilent();
-          return;
-        }
-        const node = audioCtx.createBufferSource();
-        node.buffer = clip;
-        node.connect(audioCtx.destination);
-        node.onended = () => {
-          if (speech !== mine) return;
-          speech = null;
-          emit('speak:end', { text });
-        };
-        mine.node = node;
-        node.start();
-        const ms = Math.round(clip.duration * 1000);
-        emit('speak:start', { text, voice: 'elevenlabs', ms });
-      });
+    const voice = prepared && prepared.text === text ? prepared.clip : fetchVoice(text);
+    prepared = null;
+    voice.then((clip) => {
+      if (speech !== mine) return; // stopped meanwhile, or something newer is being said
+      if (!clip) {
+        speech = null;
+        emit('speak:end', { text }); // the wait is over; the Mac's voice starts its own turn
+        if (!speakWithMac(text, opts) && opts.onSilent) opts.onSilent();
+        return;
+      }
+      const node = audioCtx.createBufferSource();
+      node.buffer = clip;
+      node.connect(audioCtx.destination);
+      node.onended = () => {
+        if (speech !== mine) return;
+        speech = null;
+        emit('speak:end', { text });
+      };
+      mine.node = node;
+      node.start();
+      const ms = Math.round(clip.duration * 1000);
+      emit('speak:start', { text, voice: 'elevenlabs', ms });
+    });
     return true;
   }
   function silence() {
@@ -742,7 +751,73 @@
     }
     emit('speak:end', { text: was.text });
   }
-  const stopSpeaking = silence;
+  function stopSpeaking() {
+    silence();
+    stopClip('cancelled');
+  }
+
+  // ---------- clip before a spoken answer ----------
+  // "What's MCP?" asked aloud: a short video plays in the middle of a cloudy screen while GOAT
+  // works out the answer, and the answer is spoken once it ends. A click skips to the answer;
+  // talking over it or Esc cancels both; a clip that can't play is skipped at once.
+  let shownClip = null; // { finish(how) }
+  function playClip(url) {
+    stopClip('cancelled');
+    return new Promise((resolve) => {
+      const layer = el('div', 'clip interactive');
+      for (const puff of ['a', 'b', 'c', 'd']) layer.append(el('div', `clip-cloud ${puff}`));
+      const frame = el('div', 'clip-frame');
+      const video = document.createElement('video');
+      video.src = url;
+      video.playsInline = true;
+      video.preload = 'auto';
+      frame.append(video);
+      layer.append(frame);
+      let timer = null;
+      const me = {
+        finish(how) {
+          if (shownClip !== me) return;
+          shownClip = null;
+          clearTimeout(timer);
+          video.pause();
+          layer.classList.add('out');
+          setTimeout(() => layer.remove(), 400);
+          updateClickThrough();
+          emit('clip:end', { how });
+          resolve(how);
+        },
+      };
+      shownClip = me;
+      video.addEventListener('ended', () => me.finish('ended'));
+      video.addEventListener('error', () => me.finish('error'));
+      layer.addEventListener('click', () => me.finish('skipped'));
+      // Never longer than the clip and a little, even if it stalls; 8 s if it never starts.
+      timer = setTimeout(() => me.finish('timeout'), 8000);
+      video.addEventListener('loadedmetadata', () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => me.finish('timeout'), (Number.isFinite(video.duration) ? video.duration : 30) * 1000 + 3000);
+      });
+      document.body.append(layer);
+      updateClickThrough();
+      emit('clip:start', { url });
+      Promise.resolve()
+        .then(() => video.play())
+        .catch(() => me.finish('error'));
+    });
+  }
+  function stopClip(how = 'skipped') {
+    if (shownClip) shownClip.finish(how);
+  }
+  // The clip for a spoken question, if this Mac has one: resolves when it's over (how it ended), or null.
+  async function clipFor(question) {
+    let found = null;
+    try {
+      found = goat.clipFor ? await goat.clipFor(question) : null;
+    } catch {
+      found = null;
+    }
+    return found && typeof found.url === 'string' ? playClip(found.url) : null;
+  }
 
   function handleReply(reply) {
     emit('reply', reply);
@@ -777,8 +852,11 @@
   }
 
   async function ask(question, extra) {
+    stopClip('cancelled');
     setThinking(true);
     emit('ask', { question });
+    // Asked aloud, with a clip of its own ("What's MCP?"): the clip plays while GOAT works.
+    const clipOver = extra && extra.voice ? clipFor(question) : null;
     let reply;
     try {
       reply = await goat.ask(question, { ...(extra || {}), chatId: currentChatId() });
@@ -788,6 +866,11 @@
       setThinking(false);
     }
     rememberTurn(question, reply);
+    if (clipOver) {
+      // The answer is spoken once the clip ends; its voice is fetched meanwhile.
+      if (reply && !reply.error && reply.source !== 'guide' && state.voice) prepareSpeech(reply.say);
+      if ((await clipOver) === 'cancelled') return reply;
+    }
     handleReply(reply || { error: 'empty_reply', message: 'No answer came back.' });
     return reply;
   }

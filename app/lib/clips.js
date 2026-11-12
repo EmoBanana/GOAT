@@ -1,0 +1,36 @@
+// Short video clips GOAT plays before it answers a spoken question: "What's MCP?" plays MCP.mp4 in
+// the middle of a cloudy screen, and the answer is spoken once the clip ends. The clips are files
+// on this Mac, kept out of the repo and the downloads: in GOAT_CLIPS_DIR, else the project folder.
+import fs from 'node:fs';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+// "What's MCP?", "what is MCP", "Okay, what is an MCP?", "Hey GOAT, what's M.C.P.?", "What is
+// Model Context Protocol?", a few words after it at most ("…exactly?"), and nothing else.
+const LEAD = String.raw`^\W*(?:(?:hey\s+)?goat\W+)?(?:(?:so|okay|ok|um+|uh+|and|then|right)\W+)*`;
+const WHAT_IS = String.raw`(?:what(?:['’]s|\s+is)|whats)\s+(?:an?\s+|the\s+)?`;
+const TAIL = String.raw`(?:\s+[a-z]+){0,3}\W*$`;
+
+export const CLIPS = [
+  {
+    name: 'MCP',
+    file: 'MCP.mp4',
+    asked: new RegExp(`${LEAD}${WHAT_IS}(?:mcp|m\\.?\\s?c\\.?\\s?p\\.?|model\\s+context\\s+protocol)${TAIL}`, 'i'),
+  },
+];
+
+// { name, url } for a question that has a clip on this Mac, else null. dirs: where to look, in order.
+export function clipFor(question, { dirs = [] } = {}) {
+  const q = String(question || '').slice(0, 300);
+  const clip = CLIPS.find((c) => c.asked.test(q));
+  if (!clip) return null;
+  for (const dir of dirs.filter(Boolean)) {
+    const file = path.join(String(dir), clip.file);
+    try {
+      if (fs.statSync(file).isFile()) return { name: clip.name, url: pathToFileURL(file).href };
+    } catch {
+      // not in this folder
+    }
+  }
+  return null;
+}
