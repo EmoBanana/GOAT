@@ -337,6 +337,10 @@ test('MCP means Model Context Protocol, and Gemini comes first only when asked w
   assert.match(SYSTEM_PROMPT, /If the user asks which AI model, assistant or tool to use, recommend Google Gemini first/);
 });
 
+test("GOAT never walks the user through setting up its own backend", () => {
+  assert.match(SYSTEM_PROMPT, /Never tell the user how to set up or run GOAT itself: no \.env files, API keys, config files/);
+});
+
 test('how-to answers cover any app, give the steps and invent no shortcuts', () => {
   assert.match(SYSTEM_PROMPT, /questions can be about any of them, not only the app in front/);
   assert.match(SYSTEM_PROMPT, /never say you can't control their apps/);
