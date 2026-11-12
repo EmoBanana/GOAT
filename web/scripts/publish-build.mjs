@@ -69,10 +69,22 @@ function upload(build) {
   }
   console.log(`[publish] Uploading ${build.file} (${Math.round(build.bytes / 1e6)} MB) to Vercel Blob…`);
   const zip = path.join(root, 'dist', build.file);
-  const output = execFileSync(cli[0], [...cli.slice(1), 'blob', 'put', zip, '--access', 'public', '--pathname', `goat/${build.file}`, '--force', '--rw-token', token], {
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'inherit'],
-  });
+  let output;
+  try {
+    output = execFileSync(cli[0], [...cli.slice(1), 'blob', 'put', zip, '--access', 'public', '--pathname', `goat/${build.file}`, '--force', '--rw-token', token], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      maxBuffer: 1 << 24,
+    });
+  } catch (err) {
+    // Show the CLI's own reason (the token masked), not just "Command failed".
+    const said = `${err.stdout || ''}${err.stderr || ''}`.split(token).join('<token>');
+    const reason = said.split('\n').find((line) => /error/i.test(line) && !/DeprecationWarning|trace-warnings/.test(line)) || said.trim();
+    const hint = /private store/i.test(said)
+      ? '\nThe downloads need a public Blob store (a store’s access can’t change after it’s made). In Vercel, create a Blob store with Public access and put its token in web/.env.local.'
+      : '';
+    fail(`Uploading ${build.file} failed: ${reason}${hint}`);
+  }
   const url = blobUrlFrom(output);
   if (!url) fail(`The upload finished, but no blob URL was in its output:\n${output}`);
   return url;
