@@ -5,6 +5,7 @@ import { createDocs } from './docs.js';
 import { createGuideStore } from './guides/store.js';
 import { createOllama } from './llm/ollama.js';
 import { createMcpHub } from './mcp/hub.js';
+import { createPayments, createTopups } from './payments/index.js';
 import { createActivityStore } from './timesheet/activity.js';
 import { loadProjects } from './timesheet/projects.js';
 import { createUsers } from './users.js';
@@ -21,8 +22,10 @@ export async function buildServer(config, overrides = {}) {
   const assist = overrides.assist ?? createAssist({ config, guides, docs, llm, mcp });
   const projects = overrides.projects ?? loadProjects(config.projectsFile);
   const activity = overrides.activity ?? createActivityStore({ dataDir: config.dataDir });
-  const app = createApp({ config, guides, docs, llm, users, assist, mcp, projects, activity, logger });
-  return { app, config, guides, docs, llm, users, mcp, assist, projects, activity };
+  const payments = overrides.payments !== undefined ? overrides.payments : createPayments({ config, users, logger });
+  const topups = createTopups({ config, payments });
+  const app = createApp({ config, guides, docs, llm, users, assist, mcp, projects, activity, payments, topups, logger });
+  return { app, config, guides, docs, llm, users, mcp, assist, projects, activity, payments };
 }
 
 export function listen(app, { port, host }) {

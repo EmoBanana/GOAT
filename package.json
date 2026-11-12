@@ -18,8 +18,16 @@
     "smoke": "node scripts/smoke-ollama.js"
   },
   "dependencies": {
+    "@coinbase/cdp-sdk": "1.62.0",
+    "@x402/core": "2.30.0",
+    "@x402/evm": "2.30.0",
+    "@x402/express": "2.30.0",
+    "@x402/extensions": "2.30.0",
+    "@x402/fetch": "2.30.0",
+    "@x402/svm": "2.30.0",
     "electron": "45.3.1",
-    "express": "^5.3.0"
+    "express": "^5.3.0",
+    "viem": "^2.57.19"
   },
   "devDependencies": {
     "playwright": "^1.65.0"

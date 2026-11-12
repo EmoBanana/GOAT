@@ -506,6 +506,12 @@
   // ---------- toast ----------
   function toast(text, opts = {}) {
     const t = el('div', `toast${opts.kind ? ` ${opts.kind}` : ''}`, text);
+    if (opts.link) {
+      // e.g. the transaction on the Base Sepolia explorer; main only opens those links
+      t.classList.add('interactive', 'link');
+      t.title = 'Open the transaction';
+      t.onclick = () => goat.openLink && goat.openLink(opts.link);
+    }
     els.toasts.append(t);
     setTimeout(() => {
       t.classList.add('out');

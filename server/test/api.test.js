@@ -24,7 +24,7 @@ describe('health, me and errors', () => {
     assert.equal(r.body.ollama.reachable, true);
     assert.equal(r.body.ollama.hasModel, true);
     assert.deepEqual(r.body.ollama.models, [DEFAULT_MODEL, 'qwen2.5:3b']);
-    assert.equal(r.body.payments.mode, 'x402-local');
+    assert.deepEqual(r.body.payments, { mode: 'off', enforced: false, network: 'eip155:84532', payTo: null });
     assert.ok(r.body.guides >= 2);
     assert.ok(r.body.docs.files >= 1 && r.body.docs.chunks > 0);
   });

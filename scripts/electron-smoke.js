@@ -17,7 +17,8 @@ const artifacts = path.join(root, 'test-artifacts');
 fs.mkdirSync(artifacts, { recursive: true });
 
 const ollama = await startMockOllama({ reply: () => 'Photos are the evidence for every issue.' });
-const srv = await startTestServer({ ollamaUrl: ollama.url });
+// Payments on: every ask in this run is paid with x402 through the app's wallet abstraction.
+const srv = await startTestServer({ ollamaUrl: ollama.url, env: { GOAT_PAYMENTS: 'x402-local', GOAT_WELCOME_CREDIT_MYR: '2', MYR_PER_USD: '4.20' } });
 const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'goat-e2e-'));
 const env = {
   ...process.env,
@@ -177,6 +178,31 @@ try {
     assert.equal(approved.length, 1);
     await page.click('[data-action="close"]');
     await app.evaluate(() => globalThis.__goatTest.setFakeWindow('Google Chrome|Forma Build - Issues'));
+  });
+
+  await check('asks are paid with x402 through the wallet abstraction; top up and upgrade to Pro', async () => {
+    const payer = await app.evaluate(() => globalThis.__goatTest.payer());
+    assert.equal(payer.kind, 'local');
+    assert.match(payer.address, /^0x[0-9a-fA-F]{40}$/);
+    const before = await app.evaluate(() => globalThis.__goatTest.wallet());
+    await askThroughMain('how do I log an issue?');
+    await until(() => page.evaluate(() => /1¢ paid via x402/.test(document.getElementById('goat-toasts').innerText)), 'the payment toast');
+    const after = await app.evaluate(() => globalThis.__goatTest.wallet());
+    assert.equal(Math.round((before.balanceUsd - after.balanceUsd) * 100), 1, 'one cent');
+    await page.keyboard.press('Escape');
+    await app.evaluate(() => globalThis.__goatTest.openAsk());
+    await page.waitForSelector('.wallet-chip:not([hidden])', { state: 'visible' });
+    await page.click('.wallet-chip');
+    await page.waitForSelector('.wallet-balance', { state: 'visible' });
+    const balance = await page.locator('.wallet-balance').innerText();
+    await page.click('[data-action="topup"]');
+    await until(async () => (await page.locator('.wallet-balance').innerText()) !== balance, 'the top-up');
+    await page.click('[data-action="upgrade"]');
+    await until(() => page.evaluate(() => /You're on GOAT Pro until/.test(document.getElementById('goat-toasts').innerText)), 'the Pro upgrade');
+    const me = await srv.request('GET', '/api/me', { user: 'e2e-tester' });
+    assert.equal(me.body.tier, 'pro');
+    await page.screenshot({ path: path.join(artifacts, 'electron-wallet.png') });
+    await page.click('[data-action="close"]');
   });
 
   await check('no page errors', async () => {

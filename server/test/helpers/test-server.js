@@ -20,7 +20,8 @@ export async function startTestServer({ ollamaUrl, env = {}, users, setupGuides,
   if (users) fs.writeFileSync(path.join(dataDir, 'users.json'), JSON.stringify(users));
 
   const config = {
-    ...loadConfig({ OLLAMA_HOST: ollamaUrl ?? 'http://127.0.0.1:9', GOAT_LLM_TIMEOUT_MS: '5000', ...env }),
+    // Payments are off unless a test turns them on.
+    ...loadConfig({ OLLAMA_HOST: ollamaUrl ?? 'http://127.0.0.1:9', GOAT_LLM_TIMEOUT_MS: '5000', GOAT_PAYMENTS: 'off', ...env }),
     guidesDir,
     dataDir,
   };

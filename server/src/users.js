@@ -20,7 +20,7 @@ export function createUsers({ dataDir, now = () => Date.now(), logger = console 
     try {
       const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
       if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
-        for (const [id, u] of Object.entries(raw)) users.set(id, { id, proUntil: Number(u?.proUntil) || 0 });
+        for (const [id, u] of Object.entries(raw)) users.set(id, { ...u, id, proUntil: Number(u?.proUntil) || 0 });
       }
     } catch (err) {
       if (err.code !== 'ENOENT') logger.warn(`[users] Couldn't read ${file}: ${err.message}`);
@@ -44,7 +44,19 @@ export function createUsers({ dataDir, now = () => Date.now(), logger = console 
     isPro,
     tier: (id) => (isPro(id) ? 'pro' : 'free'),
     setProUntil(id, proUntil) {
-      load().set(id, { id, proUntil });
+      load().set(id, { ...get(id), id, proUntil });
+      persist();
+      return get(id);
+    },
+    // Pro for `days` more days, from now or from the current end date, whichever is later.
+    extendPro(id, days) {
+      const from = Math.max(now(), get(id).proUntil || 0);
+      load().set(id, { ...get(id), id, proUntil: from + days * 86_400_000 });
+      persist();
+      return get(id);
+    },
+    setWallet(id, wallet) {
+      load().set(id, { ...get(id), id, wallet });
       persist();
       return get(id);
     },

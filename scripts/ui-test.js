@@ -524,6 +524,60 @@ await check("timesheet: today's projects, Approve and Export CSV", async () => {
   await page.keyboard.press('Escape');
 });
 
+const WALLET = {
+  mode: 'x402-local',
+  network: 'eip155:84532',
+  address: '0x0000000000000000000000000000000000000001',
+  balanceUsd: 2.3714,
+  balanceMyr: 9.96,
+  myrPerUsd: 4.2,
+  priceUsd: 0.01,
+  priceMyr: 0.04,
+  proPriceUsd: 1,
+  proPriceMyr: 4.2,
+  proDays: 30,
+  pro: false,
+  proUntil: null,
+  topupMode: 'mock',
+  explorer: null,
+};
+
+await check('wallet: a ringgit chip in the ask panel; the wallet panel tops up and upgrades to Pro', async () => {
+  await setReply('wallet', WALLET);
+  await emit({ type: 'open-ask', context: {} });
+  await page.waitForSelector('#goat-ask-input', { state: 'visible' });
+  await until(async () => (await page.locator('.wallet-chip').innerText()) === 'RM 9.96', 'the RM 9.96 chip');
+  await shot('ui-12-wallet-chip');
+  await page.click('.wallet-chip');
+  await page.waitForSelector('.wallet-balance', { state: 'visible' });
+  assert.equal(await page.locator('.wallet-balance').innerText(), 'RM 9.96');
+  assert.match(await page.locator('.wallet-sub').innerText(), /Each assist costs RM 0\.04 \(1¢\)/);
+  assert.doesNotMatch(await page.locator('#goat-panel').innerText(), /0x0000/, 'users never see an address');
+  await setReply('topup', { ...WALLET, balanceMyr: 19.96, balanceUsd: 4.7524 });
+  await page.click('[data-action="topup"]');
+  await until(async () => (await page.locator('.wallet-balance').innerText()) === 'RM 19.96', 'the topped-up balance');
+  assert.deepEqual((await calls('topup'))[0].args, [10]);
+  const proUntil = Date.now() + 30 * 86_400_000;
+  await setReply('upgradePro', { tier: 'pro', pro: true, proUntil, payment: { success: true, transaction: `0x${'b'.repeat(64)}`, network: 'eip155:84532' } });
+  await setReply('wallet', { ...WALLET, balanceMyr: 15.76, pro: true, proUntil });
+  await page.click('[data-action="upgrade"]');
+  await until(() => page.evaluate(() => /You're on GOAT Pro until/.test(document.getElementById('goat-toasts').innerText)), 'the Pro toast');
+  assert.equal(await page.locator('[data-action="upgrade"]').innerText(), 'Extend Pro');
+  assert.match(await page.locator('.wallet-pro').innerText(), /GOAT Pro until/);
+  await shot('ui-13-wallet-panel');
+  await page.click('[data-action="close"]');
+  await setReply('wallet', WALLET);
+});
+
+await check('a paid answer flies a coin and says "1¢ paid via x402"', async () => {
+  await setReply('ask', { ...LLM_REPLY, payment: { success: true, transaction: `0x${'a'.repeat(64)}`, network: 'eip155:84532', payer: WALLET.address } });
+  await askVia('why do issues need a photo?');
+  await until(() => page.evaluate(() => document.querySelectorAll('.coin').length > 0), 'the coin');
+  await until(() => page.evaluate(() => /1¢ paid via x402/.test(document.getElementById('goat-toasts').innerText)), 'the payment toast');
+  await shot('ui-14-paid');
+  await setReply('ask', LLM_REPLY);
+});
+
 await check('no page errors or CSP violations', async () => {
   assert.deepEqual(pageErrors, []);
   assert.deepEqual(await page.evaluate(() => window.__csp), []);

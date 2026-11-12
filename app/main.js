@@ -7,6 +7,7 @@ import { validRegion } from './lib/region.js';
 import { createApi } from './lib/api.js';
 import { getUserId } from './lib/identity.js';
 import { buildGuide, createRecorder } from './lib/recorder.js';
+import { createPayer } from './lib/wallet.js';
 import { createTracker } from './lib/tracker.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -23,7 +24,9 @@ if (process.env.GOAT_USER_DATA) app.setPath('userData', process.env.GOAT_USER_DA
 
 const serverUrl = process.env.GOAT_SERVER_URL || 'http://127.0.0.1:8402';
 const userId = getUserId();
-const api = createApi({ baseUrl: serverUrl, userId });
+// Replaced by a paying client once the wallet is ready (see setUpWallet).
+let api = createApi({ baseUrl: serverUrl, userId });
+let payer = { kind: 'none', address: null };
 const recorder = createRecorder();
 let lastRecording = null;
 // Timesheet tracking: off until Ctrl+Option+T, after every launch.
@@ -191,6 +194,11 @@ async function toggleTracking() {
   refreshTray();
 }
 
+function openWallet() {
+  focusOverlay();
+  send({ type: 'open-wallet' });
+}
+
 async function openTimesheet() {
   const timesheet = await api.timesheet(localDate());
   focusOverlay();
@@ -201,6 +209,24 @@ function captureStep(point) {
   if (!recorder.recording) return;
   const step = recorder.capture(point || screen.getCursorScreenPoint());
   if (step) send({ type: 'record:step', step, count: recorder.steps.length });
+}
+
+// The wallet abstraction: only main holds the key; the server only sees the address.
+async function setUpWallet() {
+  try {
+    payer = await createPayer({
+      mode: process.env.GOAT_WALLET || 'auto',
+      dir: app.getPath('userData'),
+      env: process.env,
+      network: process.env.X402_NETWORK || 'eip155:84532',
+    });
+  } catch (err) {
+    console.warn(`[goat] No wallet: ${err.message}`);
+    payer = { kind: 'none', address: null, fetch: globalThis.fetch };
+  }
+  api = createApi({ baseUrl: serverUrl, userId, walletAddress: payer.address, fetchImpl: payer.fetch });
+  const wallet = await api.wallet();
+  log(`Wallet: ${payer.kind}${wallet.balanceMyr != null ? `, RM ${wallet.balanceMyr.toFixed(2)}` : ''}${wallet.mode ? ` (${wallet.mode})` : ''}`);
 }
 
 function registerIpc() {
@@ -217,6 +243,15 @@ function registerIpc() {
     const url = `${serverUrl}/api/timesheet.csv?date=${dateOrToday(date)}&user=${encodeURIComponent(userId)}`;
     if (process.env.GOAT_TEST_HOOKS !== '1') await shell.openExternal(url);
     return { ok: true, url };
+  });
+  ipcMain.handle('goat:wallet', (event) => (fromOverlay(event) ? api.wallet() : { error: 'forbidden' }));
+  ipcMain.handle('goat:topup', (event, myr) => (fromOverlay(event) ? api.topup(Number(myr) || 10) : { error: 'forbidden' }));
+  ipcMain.handle('goat:upgrade', (event) => (fromOverlay(event) ? api.upgradePro() : { error: 'forbidden' }));
+  ipcMain.on('goat:open-link', (event, url) => {
+    // Only transaction links on the Base Sepolia explorer.
+    if (fromOverlay(event) && /^https:\/\/sepolia\.basescan\.org\/tx\/0x[0-9a-fA-F]+$/.test(String(url)) && process.env.GOAT_TEST_HOOKS !== '1') {
+      shell.openExternal(url);
+    }
   });
   ipcMain.handle('goat:save-guide', async (event, form) => {
     if (!fromOverlay(event)) return { error: 'forbidden', message: 'Unknown sender.' };
@@ -274,6 +309,7 @@ function trayMenu() {
       ? { label: `Stop tracking (${hotkey('T')})`, click: () => toggleTracking() }
       : { label: `Start tracking (${hotkey('T')})`, click: () => toggleTracking() },
     { label: "Today's timesheet", click: () => openTimesheet() },
+    { label: 'Wallet and Pro…', click: () => openWallet() },
     { type: 'separator' },
     { label: `Server: ${serverUrl}`, enabled: false },
     { label: `User: ${userId}`, enabled: false },
@@ -298,8 +334,9 @@ if (!app.requestSingleInstanceLock()) {
   console.warn('[goat] GOAT is already running.');
   app.quit();
 } else {
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
     if (isMac) app.dock?.hide();
+    await setUpWallet();
     registerIpc();
     createWindow();
     createTray();
@@ -316,6 +353,8 @@ if (!app.requestSingleInstanceLock()) {
         recording: () => ({ recording: recorder.recording, steps: recorder.steps, app: recorder.app }),
         toggleTracking: () => toggleTracking(),
         tracking: () => ({ tracking: tracker.tracking, queued: tracker.queued }),
+        wallet: () => api.wallet(),
+        payer: () => ({ kind: payer.kind, address: payer.address }),
         setFakeWindow: (value) => {
           process.env.GOAT_FAKE_WINDOW = value;
         },

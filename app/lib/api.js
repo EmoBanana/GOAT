@@ -1,6 +1,9 @@
+import { decodePaymentResponseHeader } from '@x402/fetch';
+
 // HTTP client for the GOAT server, used only by the main process.
 // Never throws: failures come back as { error, message } so they cross IPC intact.
-export function createApi({ baseUrl, userId, fetchImpl = globalThis.fetch, timeoutMs = 130_000 }) {
+// fetchImpl is the x402 paying fetch; walletAddress (never a key) links the wallet to the user.
+export function createApi({ baseUrl, userId, walletAddress = null, fetchImpl = globalThis.fetch, timeoutMs = 130_000 }) {
   async function request(method, path, body, timeout = timeoutMs) {
     let res;
     try {
@@ -9,6 +12,7 @@ export function createApi({ baseUrl, userId, fetchImpl = globalThis.fetch, timeo
         headers: {
           accept: 'application/json',
           'x-goat-user': userId,
+          ...(walletAddress ? { 'x-goat-wallet': walletAddress } : {}),
           ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
         },
         body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -26,6 +30,16 @@ export function createApi({ baseUrl, userId, fetchImpl = globalThis.fetch, timeo
     } catch {
       data = null;
     }
+    if (res.status === 402) {
+      const reason = typeof data?.error === 'string' ? data.error : '';
+      return {
+        error: 'payment_required',
+        message: !reason || /insufficient/i.test(reason)
+          ? 'Your GOAT balance is too low. Top up from the RM chip in the ask panel.'
+          : `The payment didn't go through (${reason}).`,
+        status: 402,
+      };
+    }
     if (!res.ok) {
       return {
         ...(data && typeof data === 'object' ? data : {}),
@@ -33,6 +47,14 @@ export function createApi({ baseUrl, userId, fetchImpl = globalThis.fetch, timeo
         message: data?.message || `The GOAT server answered ${res.status}.`,
         status: res.status,
       };
+    }
+    const receipt = res.headers.get('payment-response');
+    if (receipt && data && typeof data === 'object') {
+      try {
+        data.payment = decodePaymentResponseHeader(receipt);
+      } catch {
+        // a receipt we can't read doesn't spoil the answer
+      }
     }
     return data ?? {};
   }
@@ -49,5 +71,8 @@ export function createApi({ baseUrl, userId, fetchImpl = globalThis.fetch, timeo
     postActivity: (samples) => request('POST', '/api/activity', { samples }, 10_000),
     timesheet: (date) => request('GET', `/api/timesheet?date=${encodeURIComponent(date)}`, undefined, 10_000),
     approveTimesheet: (date) => request('POST', '/api/timesheet/approve', { date }, 10_000),
+    wallet: () => request('GET', '/api/wallet', undefined, 8000),
+    topup: (myr) => request('POST', '/api/wallet/topup', { myr }, 30_000),
+    upgradePro: () => request('POST', '/api/pro/upgrade', {}, 30_000),
   };
 }

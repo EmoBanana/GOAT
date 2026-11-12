@@ -1,10 +1,11 @@
 import express from 'express';
 import { HttpError } from './errors.js';
 import { guideSummary, publicGuide } from './guides/store.js';
+import { mountWallet, walletLinker } from './payments/routes.js';
 import { mountTimesheet } from './timesheet/routes.js';
 import { sanitizeUserId } from './users.js';
 
-export function createApp({ config, guides, docs, llm, users, assist, mcp, projects, activity, logger = console }) {
+export function createApp({ config, guides, docs, llm, users, assist, mcp, projects, activity, payments = null, topups = null, logger = console }) {
   const app = express();
   app.disable('x-powered-by');
   app.use(express.json({ limit: '5mb' }));
@@ -12,6 +13,9 @@ export function createApp({ config, guides, docs, llm, users, assist, mcp, proje
     req.userId = sanitizeUserId(req.get('x-goat-user'));
     next();
   });
+  app.use(walletLinker({ config, users, payments }));
+  // x402: POST /api/assist and POST /api/pro/upgrade need a payment (Pro users ask free).
+  if (payments) app.use(payments.middleware);
 
   app.get('/api/health', async (_req, res) => {
     const ollama = await llm.status(config.model);
@@ -19,7 +23,7 @@ export function createApp({ config, guides, docs, llm, users, assist, mcp, proje
       ok: true,
       models: { base: config.model, pro: config.modelPro, stt: config.sttModel },
       ollama: { host: config.ollamaHost, ...ollama },
-      payments: { mode: config.payments, enforced: false },
+      payments: { mode: config.payments, enforced: Boolean(payments), network: config.network, payTo: payments?.payTo ?? null },
       think: config.think,
       mcp: mcp ? mcp.status() : [],
       guides: guides.count(),
@@ -60,6 +64,7 @@ export function createApp({ config, guides, docs, llm, users, assist, mcp, proje
   });
 
   if (projects && activity) mountTimesheet(app, { projects, activity });
+  mountWallet(app, { config, users, payments, topups });
 
   app.use('/api', (req) => {
     throw new HttpError(404, 'not_found', `No route for ${req.method} ${req.originalUrl}.`);
