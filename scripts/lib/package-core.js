@@ -133,10 +133,19 @@ export function stagedPackageJson(rootPkg, { serverUrl, commit = '', builtAt = '
   };
 }
 
-export const ARCH_LABELS = { arm64: 'Apple silicon', x64: 'Intel' };
+// The platforms GOAT is packaged for, the tag in their file names, and their architectures.
+export const PLATFORMS = {
+  darwin: { tag: 'mac', name: 'macOS', archs: { arm64: 'Apple silicon', x64: 'Intel' } },
+  win32: { tag: 'win', name: 'Windows', archs: { x64: 'x64', arm64: 'Arm' } },
+};
 
-export function buildFileName({ version, arch }) {
-  return `GOAT-${version}-mac-${arch}.zip`;
+export function buildLabel(platform, arch) {
+  const p = PLATFORMS[platform];
+  return p ? `${p.name} · ${p.archs[arch] || arch}` : `${platform} · ${arch}`;
+}
+
+export function buildFileName({ version, platform = 'darwin', arch }) {
+  return `GOAT-${version}-${PLATFORMS[platform].tag}-${arch}.zip`;
 }
 
 // dist/latest.json lists the builds of the newest version; a build for another architecture of

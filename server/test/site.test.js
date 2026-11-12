@@ -72,6 +72,31 @@ test('GET /api/downloads lists the builds on disk and what the server charges', 
   });
 });
 
+test('a Windows build is listed and downloads beside the Mac one', async () => {
+  const winDist = path.join(tmp, 'win-dist');
+  fs.mkdirSync(winDist);
+  fs.writeFileSync(path.join(winDist, 'GOAT-0.1.0-mac-arm64.zip'), zip);
+  fs.writeFileSync(path.join(winDist, 'GOAT-0.1.0-win-x64.zip'), zip);
+  const builds = [build('arm64', 'GOAT-0.1.0-mac-arm64.zip'), { ...build('x64', 'GOAT-0.1.0-win-x64.zip'), platform: 'win32' }];
+  fs.writeFileSync(path.join(winDist, 'latest.json'), JSON.stringify({ name: 'GOAT', version: '0.1.0', builds }));
+  const win = await startTestServer({ env: { GOAT_SITE_DIR: siteDir, GOAT_DIST_DIR: winDist } });
+  try {
+    const res = await win.request('GET', '/api/downloads');
+    assert.deepEqual(
+      res.body.builds.map((b) => [b.label, b.url]),
+      [
+        ['macOS · Apple silicon', '/download/GOAT-0.1.0-mac-arm64.zip'],
+        ['Windows · x64', '/download/GOAT-0.1.0-win-x64.zip'],
+      ],
+    );
+    const download = await win.request('GET', '/download/GOAT-0.1.0-win-x64.zip');
+    assert.equal(download.status, 200);
+    assert.match(download.headers.get('content-disposition'), /GOAT-0\.1\.0-win-x64\.zip/);
+  } finally {
+    await win.close();
+  }
+});
+
 test('with nothing built there are no builds, and the prices still show', async () => {
   const res = await bare.request('GET', '/api/downloads');
   assert.equal(res.status, 200);

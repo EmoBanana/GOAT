@@ -1,5 +1,6 @@
-// npm run test:package: checks the GOAT.app that npm run package put in dist/, then runs the
-// Electron e2e test (scripts/electron-smoke.js) against it instead of the dev checkout.
+// npm run test:package: checks the builds npm run package put in dist/, then runs the Electron e2e
+// test (scripts/electron-smoke.js) against the Mac app instead of the dev checkout. A Windows build,
+// if there is one, gets the same checks on its contents; it can't run on a Mac.
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
@@ -17,6 +18,7 @@ if (process.platform !== 'darwin' || !fs.existsSync(appPath) || !fs.existsSync(m
 }
 const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
 const build = manifest.builds.find((b) => b.platform === 'darwin' && b.arch === process.arch);
+const winBuild = manifest.builds.find((b) => b.platform === 'win32');
 
 // app.asar: an 8-byte pickle holding the header's size, the header pickle (payload size, string
 // length, JSON), then the file contents at the offsets the header gives.
@@ -61,14 +63,12 @@ function check(name, fn) {
   }
 }
 
-const asar = readAsar(path.join(appPath, 'Contents', 'Resources', 'app.asar'));
-const plist = (key) => execFileSync('plutil', ['-extract', key, 'raw', path.join(appPath, 'Contents', 'Info.plist')], { encoding: 'utf8' }).trim();
 const packageOf = (file) => {
   const parts = file.split('/');
   return parts[1].startsWith('@') ? `${parts[1]}/${parts[2]}` : parts[1];
 };
 
-check('the download holds only the core: app/ without its tests, and the x402 client', () => {
+function holdsOnlyTheCore(asar) {
   const outside = asar.files.filter((f) => !f.startsWith('app/') && !f.startsWith('node_modules/') && f !== 'package.json');
   assert.deepEqual(outside, [], 'nothing but app/, node_modules/ and package.json');
   assert.ok(asar.files.includes('app/main.js') && asar.files.includes('app/renderer/index.html'));
@@ -76,16 +76,27 @@ check('the download holds only the core: app/ without its tests, and the x402 cl
   const packages = new Set(asar.files.filter((f) => f.startsWith('node_modules/')).map(packageOf));
   for (const name of [...CORE_DEPENDENCIES, '@x402/core']) assert.ok(packages.has(name), `${name} ships`);
   for (const name of ['express', '@x402/express', '@coinbase/cdp-sdk', 'electron', 'playwright', 'gsap']) assert.ok(!packages.has(name), `${name} stays out`);
-});
+}
 
-check('its package.json starts app/main.js and names the server it was built for', () => {
+function startsTheAppForItsServer(asar, forBuild) {
   const pkg = asar.json('package.json');
   assert.equal(pkg.main, 'app/main.js');
   assert.equal(pkg.type, 'module');
   assert.deepEqual(Object.keys(pkg.dependencies), CORE_DEPENDENCIES);
-  assert.equal(pkg.goat.serverUrl, build.serverUrl);
-});
+  assert.equal(pkg.goat.serverUrl, forBuild.serverUrl);
+}
 
+function zipMatchesManifest(forBuild) {
+  const zip = path.join(root, 'dist', forBuild.file);
+  assert.equal(fs.statSync(zip).size, forBuild.bytes);
+  assert.equal(crypto.createHash('sha256').update(fs.readFileSync(zip)).digest('hex'), forBuild.sha256);
+}
+
+const asar = readAsar(path.join(appPath, 'Contents', 'Resources', 'app.asar'));
+const plist = (key) => execFileSync('plutil', ['-extract', key, 'raw', path.join(appPath, 'Contents', 'Info.plist')], { encoding: 'utf8' }).trim();
+
+check('the download holds only the core: app/ without its tests, and the x402 client', () => holdsOnlyTheCore(asar));
+check('its package.json starts app/main.js and names the server it was built for', () => startsTheAppForItsServer(asar, build));
 check('Info.plist keeps GOAT out of the Dock and explains the microphone and window titles', () => {
   assert.equal(plist('LSUIElement'), 'true');
   assert.equal(plist('CFBundleName'), 'GOAT');
@@ -93,26 +104,33 @@ check('Info.plist keeps GOAT out of the Dock and explains the microphone and win
   assert.match(plist('NSMicrophoneUsageDescription'), /Option\+Cmd/);
   assert.match(plist('NSAppleEventsUsageDescription'), /window/);
 });
-
 check('the bundle has a valid ad-hoc signature', () => {
   execFileSync('codesign', ['--verify', '--deep', '--strict', appPath], { stdio: 'pipe' });
   const details = spawnSync('codesign', ['-dv', appPath], { encoding: 'utf8' }).stderr; // codesign -d writes to stderr
   assert.match(details, /Signature=adhoc/);
   assert.match(details, /Identifier=io\.github\.emobanana\.goat/);
 });
+check('the zip in dist/latest.json matches its size and hash', () => zipMatchesManifest(build));
 
-check('the zip in dist/latest.json matches its size and hash', () => {
-  const zip = path.join(root, 'dist', build.file);
-  assert.equal(fs.statSync(zip).size, build.bytes);
-  assert.equal(crypto.createHash('sha256').update(fs.readFileSync(zip)).digest('hex'), build.sha256);
-});
+const winAsar = winBuild && path.join(root, 'dist', `win-${winBuild.arch}`, 'GOAT', 'resources', 'app.asar');
+if (winAsar && fs.existsSync(winAsar)) {
+  const wasar = readAsar(winAsar);
+  check('Windows: the download holds only the core, like the Mac one', () => holdsOnlyTheCore(wasar));
+  check('Windows: its package.json names the server it was built for', () => startsTheAppForItsServer(wasar, winBuild));
+  check('Windows: the zip unpacks to a GOAT folder with GOAT.exe, the app and the blue tray icon', () => {
+    const entries = execFileSync('unzip', ['-Z1', path.join(root, 'dist', winBuild.file)], { encoding: 'utf8', maxBuffer: 1 << 24 }).split('\n');
+    for (const f of ['GOAT/GOAT.exe', 'GOAT/resources/app.asar']) assert.ok(entries.includes(f), `${f} is in the zip`);
+    assert.ok(wasar.files.includes('app/assets/tray.png'), 'the Windows tray icon ships');
+  });
+  check('Windows: the zip in dist/latest.json matches its size and hash', () => zipMatchesManifest(winBuild));
+}
 
 if (failed) {
   console.log(`\n${failed} packaging check(s) failed; skipping the e2e run.`);
   process.exit(1);
 }
 
-console.log('\nThe Electron e2e checks, against the packaged app:');
+console.log('\nThe Electron e2e checks, against the packaged Mac app:');
 const env = { ...process.env, GOAT_E2E_APP: appPath };
 delete env.ELECTRON_RUN_AS_NODE;
 const e2e = spawnSync(process.execPath, [path.join(root, 'scripts', 'electron-smoke.js')], { stdio: 'inherit', env });

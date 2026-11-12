@@ -12,8 +12,17 @@ const FONT_PACKAGES = {
   'hanken-grotesk': '@fontsource-variable/hanken-grotesk',
   'playwrite-fr-trad': '@fontsource-variable/playwrite-fr-trad',
 };
-const ARCH_LABELS = { arm64: 'Apple silicon', x64: 'Intel' };
-const BUILD_FILE = /^GOAT-[0-9A-Za-z.+-]+-mac-(arm64|x64)\.zip$/;
+// How a build is named on the page: "macOS · Apple silicon", "Windows · x64".
+const PLATFORM_LABELS = {
+  darwin: { name: 'macOS', archs: { arm64: 'Apple silicon', x64: 'Intel' } },
+  win32: { name: 'Windows', archs: { x64: 'x64', arm64: 'Arm' } },
+};
+const BUILD_FILE = /^GOAT-[0-9A-Za-z.+-]+-(mac|win)-(arm64|x64)\.zip$/;
+
+function labelOf(build) {
+  const p = PLATFORM_LABELS[build.platform] || PLATFORM_LABELS.darwin;
+  return `${p.name} · ${p.archs[build.arch] || build.arch}`;
+}
 
 // dist/latest.json, or null when nothing has been built.
 export function readManifest(distDir) {
@@ -32,7 +41,7 @@ export function downloadsView(manifest, config) {
     .map((b) => ({
       platform: b.platform,
       arch: b.arch,
-      label: `macOS · ${ARCH_LABELS[b.arch] || b.arch}`,
+      label: labelOf(b),
       file: b.file,
       url: `/download/${b.file}`,
       bytes: b.bytes,

@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import {
   bareImports,
   buildFileName,
+  buildLabel,
   collectPackages,
   copyPackage,
   CORE_DEPENDENCIES,
@@ -120,4 +121,16 @@ test('the manifest keeps other architectures of the same version and drops older
   const next = mergeManifest(rebuilt, { version: '0.2.0', build: build('arm64', '0.2.0') });
   assert.deepEqual(next.builds.map((b) => b.file), ['GOAT-0.2.0-mac-arm64.zip']);
   assert.equal(next.name, 'GOAT');
+});
+
+test('a Windows build is named and listed beside the Mac one', () => {
+  assert.equal(buildFileName({ version: '0.1.0', platform: 'win32', arch: 'x64' }), 'GOAT-0.1.0-win-x64.zip');
+  assert.equal(buildLabel('darwin', 'arm64'), 'macOS · Apple silicon');
+  assert.equal(buildLabel('win32', 'x64'), 'Windows · x64');
+  const mac = { platform: 'darwin', arch: 'arm64', file: 'GOAT-0.1.0-mac-arm64.zip', sha256: 'mac' };
+  const win = { platform: 'win32', arch: 'x64', file: 'GOAT-0.1.0-win-x64.zip', sha256: 'win' };
+  const both = mergeManifest(mergeManifest(null, { version: '0.1.0', build: mac }), { version: '0.1.0', build: win });
+  assert.deepEqual(both.builds.map((b) => b.file).sort(), ['GOAT-0.1.0-mac-arm64.zip', 'GOAT-0.1.0-win-x64.zip']);
+  const rebuiltWin = mergeManifest(both, { version: '0.1.0', build: { ...win, sha256: 'win2' } });
+  assert.deepEqual(rebuiltWin.builds.map((b) => b.sha256).sort(), ['mac', 'win2'], 'rebuilding Windows keeps the Mac build');
 });
