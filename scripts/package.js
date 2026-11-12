@@ -157,10 +157,11 @@ try {
   for (const p of packages) copyPackage(path.join(root, p.dir), path.join(srcDir, p.dir));
   log(`${files.length} app files and ${packages.length} packages (${CORE_DEPENDENCIES.join(', ')} and their dependencies)`);
 
-  // 3. The icon. A missing icon isn't worth failing the build for.
+  // 3. The icon. A missing icon isn't worth failing the build for. macOS 26 draws an icon without a
+  // tile on a grey square of its own, so the Mac gets the cup on a white tile (icon-mac.svg).
   let icon;
   try {
-    const svg = fs.readFileSync(path.join(root, 'app', 'assets', 'icon.svg'), 'utf8');
+    const svg = fs.readFileSync(path.join(root, 'app', 'assets', isMac ? 'icon-mac.svg' : 'icon.svg'), 'utf8');
     icon = path.join(stage, isMac ? 'GOAT.icns' : 'GOAT.ico');
     await (isMac ? makeIcns(svg, icon) : makeIco(svg, icon));
   } catch (err) {

@@ -1,9 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-  <!-- GOAT's app icon: a kopitiam cup of kopi on a signal-yellow tile, outlined in black with a hard
-       shadow. Apple's grid: an 824 px tile with 100 px margins. scripts/package.js renders it to
-       .icns for macOS and, cropped to the tile, .ico for Windows. -->
-  <rect x="100" y="100" width="824" height="824" rx="186" fill="#ffd60a"/>
-  <g transform="translate(510 528) scale(12.6) translate(-31 -29)" stroke-linejoin="round" stroke-linecap="round">
+  <!-- GOAT's app icon: the kopitiam cup of kopi on its own (no tile), outlined in black with a hard
+       shadow, filling Apple's 824 px icon area. scripts/package.js crops it closer and renders it to
+       .ico for Windows; the Mac's .icns comes from icon-mac.svg, the same cup on a white tile. -->
+  <g transform="translate(512 512) scale(16.4) translate(-31.5 -30.4)" stroke-linejoin="round" stroke-linecap="round">
     <g transform="translate(2.4 2.4)" fill="#0a0a0a" stroke="#0a0a0a" stroke-width="2.4">
       <ellipse cx="30" cy="45.5" rx="22" ry="5"/>
       <path d="M14 21 L17.5 40 Q18.5 44 23 44 L37 44 Q41.5 44 42.5 40 L46 21 Z"/>
@@ -20,5 +19,4 @@
     <ellipse cx="30" cy="21.3" rx="13.1" ry="2.3" fill="#6b3f1d"/>
     <path d="M25 15.5 c-2.6 -2.6 2.6 -4.6 0 -7.6 M33.5 15.5 c-2.6 -2.6 2.6 -4.6 0 -7.6" fill="none" stroke="#0a0a0a" stroke-width="2.4"/>
   </g>
-  <rect x="111" y="111" width="802" height="802" rx="175" fill="none" stroke="#0a0a0a" stroke-width="22"/>
 </svg>
