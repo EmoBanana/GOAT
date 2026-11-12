@@ -539,6 +539,14 @@ await check('timesheet: opens at once, then the day as activities with times, by
   ]);
   assert.equal(await page.locator('.ts-note').innerText(), '0.20 h idle, not counted.');
   assert.equal(await page.locator('.ts-status').innerText(), 'Draft');
+  // Docked at the bottom right like the account cards, in their look, with no backdrop.
+  const box = await until(async () => {
+    const b = await page.locator('#goat-panel').boundingBox();
+    return b && b.x + b.width >= 1440 - 24 && b.y + b.height >= 900 - 24 && b;
+  }, 'the timesheet docked at the bottom right');
+  assert.ok(box.width > 400, JSON.stringify(box));
+  assert.equal(await page.locator('#goat-backdrop').isHidden(), true, 'no backdrop');
+  assert.equal(await page.evaluate(() => getComputedStyle(document.getElementById('goat-panel')).borderTopWidth), '2px');
   await shot('ui-11-timesheet');
   await page.click('[data-action="approve"]');
   await until(async () => (await page.locator('.ts-status').innerText()) === 'Approved', 'the approved status');

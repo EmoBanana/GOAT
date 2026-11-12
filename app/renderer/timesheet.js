@@ -72,9 +72,12 @@
 
   function openSheet(timesheet) {
     current = timesheet;
+    // Docked at the bottom right like the account cards: the apps stay usable while it's open.
     const p = ui.openPanel({
       name: 'timesheet',
       html: HTML,
+      keyboard: false,
+      dock: 'right',
       onclick: (event) => {
         const button = event.target.closest('[data-action]');
         if (!button || button.disabled) return;

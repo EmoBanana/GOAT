@@ -364,7 +364,8 @@ body {
   animation: goat-blink 1.6s ease-in-out infinite;
 }
 .cursor.tracking .track-dot { display: block; }
-.panel-timesheet { top: 14%; width: min(620px, calc(100vw - 48px)); }
+/* The day's timesheet docks at the bottom right like the account cards, wider for its table. */
+.panel.dock-right.panel-timesheet { width: min(580px, calc(100vw - var(--safe-left, 0px) - var(--safe-right, 0px) - 40px)); }
 .ts-table { width: 100%; margin-top: 12px; border-collapse: collapse; font-size: 13.5px; }
 .ts-table th { padding: 6px 8px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 12px; font-weight: 600; text-align: left; }
 .ts-table td { padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
@@ -528,6 +529,24 @@ body {
 .panel.dock-right .wallet-sub { margin-top: 8px; color: var(--nb-soft); font: 500 11.5px/1.4 var(--mono); }
 .panel.dock-right .wallet-pro { margin-top: 14px; border: var(--nb-rule); border-radius: 0; background: var(--nb-grey); color: var(--nb-ink); }
 .panel.dock-right .form-actions { margin-top: 16px; }
+/* Timesheet: a status tag by the title, the day's activities and the projects on black rules,
+   project codes as signal-yellow tags. */
+.panel.dock-right .form-head { align-items: center; margin-bottom: 2px; }
+.panel.dock-right .form-head strong { font-size: 19px; font-weight: 800; font-stretch: 125%; letter-spacing: -0.02em; }
+.panel.dock-right .ts-status { padding: 3px 7px; border: var(--nb-rule); color: var(--nb-ink); font: 600 10.5px/1 var(--mono); letter-spacing: 0.04em; }
+.panel.dock-right .ts-status:empty { display: none; }
+.panel.dock-right .ts-status.approved { background: #b9f5c9; }
+.panel.dock-right .ts-date { color: var(--nb-soft); font: 500 11.5px/1.4 var(--mono); }
+.panel.dock-right .ts-loading::before { border-radius: 0; }
+.panel.dock-right .ts-acts { margin-top: 14px; border-top: var(--nb-rule); }
+.panel.dock-right .ts-act { border-bottom: 1px solid var(--nb-ink); }
+.panel.dock-right :is(.ts-when, .ts-dur, .ts-apps, .ts-note, .ts-empty) { color: var(--nb-soft); }
+.panel.dock-right .ts-code { padding: 1px 5px; border: var(--nb-rule); border-radius: 0; background: var(--nb-yellow); color: var(--nb-ink); font: 600 10.5px/1.35 var(--mono); }
+.panel.dock-right .ts-code.none { padding: 0; border: 0; background: none; color: var(--nb-soft); }
+.panel.dock-right .ts-table th { border-bottom: var(--nb-rule); color: var(--nb-soft); font: 600 10.5px/1.2 var(--mono); letter-spacing: 0.04em; }
+.panel.dock-right .ts-table td { border-bottom: 1px solid var(--nb-ink); }
+.panel.dock-right .ts-table tr.total td { border-top: var(--nb-rule); border-bottom: 0; }
+.panel.dock-right .ts-note { font: 500 11px/1.4 var(--mono); }
 @media (prefers-reduced-motion: reduce) {
   .panel.dock-right button,
   .panel.dock-right .welcome-actions svg { transition: none; }
