@@ -783,6 +783,15 @@ await check('voice: hold to talk shows a live waveform; letting go sends only th
   await until(() => page.evaluate(() => document.getElementById('goat-cursor').dataset.voice === 'listening'), 'the waveform');
   await sleep(1600); // the fake mic plays the fixture on a loop
   const scales = await page.evaluate(() => [...document.querySelectorAll('.voice-hud .bar')].map((b) => parseFloat(/scaleY\(([\d.]+)\)/.exec(b.style.transform)?.[1] || '0')));
+  // The waveform is a white pill with a row of bars in it, not the bars' own style on the pill
+  // (a selector lost from a shared rule once turned the whole HUD into one 3 px blue line).
+  const hud = await page.evaluate(() => {
+    const el = document.querySelector('.voice-hud');
+    const r = el.getBoundingClientRect();
+    return { display: getComputedStyle(el).display, w: Math.round(r.width), h: Math.round(r.height), bg: getComputedStyle(el).backgroundColor };
+  });
+  assert.equal(hud.display, 'flex');
+  assert.ok(hud.w > 40 && hud.h >= 24 && /255, 255, 255/.test(hud.bg), `a white pill of bars, not a line: ${JSON.stringify(hud)}`);
   assert.ok(Math.max(...scales) > 0.3, `the bars follow the voice: ${scales}`);
   await shot('ui-15-listening');
   await emit({ type: 'voice-hold', down: false });

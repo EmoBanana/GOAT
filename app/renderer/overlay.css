@@ -333,7 +333,7 @@ body {
   box-shadow: 0 4px 14px rgba(15, 23, 42, 0.22), 0 0 0 1px var(--line);
 }
 .cursor[data-voice="listening"] .voice-hud,
-.cursor[data-voice="working"] .voice-hud,
+.cursor[data-voice="working"] .voice-hud { display: flex; }
 .voice-hud .bar { display: block; width: 3px; height: 16px; border-radius: 2px; background: var(--blue); transform: scaleY(0.2); transition: transform 60ms linear; }
 .voice-hud .dots { display: none; align-items: center; gap: 4px; padding: 0 2px; }
 .voice-hud .dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--blue); animation: goat-dot 1s ease-in-out infinite; }
