@@ -115,7 +115,6 @@ describe('planned guides through /api/assist', () => {
     try {
       const r = await srv.request('POST', '/api/assist', {
         body: { question: 'how do I filter issues by assignee?', context: { app: 'Microsoft Edge', title: 'Issues' }, targets: SCREEN },
-        headers: { 'x-goat-progress': 'plan-ask-001' },
       });
       assert.equal(r.status, 200);
       assert.equal(r.body.source, 'guide');
@@ -128,8 +127,6 @@ describe('planned guides through /api/assist', () => {
       const [call] = ollama.chats();
       assert.deepEqual(call.body.format, PLAN_SCHEMA);
       assert.ok(call.body.messages.at(-1).content.includes('- "Filters" button'));
-      const steps = (await srv.request('GET', '/api/progress/plan-ask-001')).body.steps;
-      assert.ok(steps.includes('Planning the steps') && steps.includes('Found “Filters” on screen'), steps.join(' > '));
     } finally {
       await srv.close();
       await ollama.close();

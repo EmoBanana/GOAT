@@ -184,9 +184,9 @@ const SCREEN_NOTE = (region) =>
 // with a voice question (context only; guides still win). chats: every ask joins a chat (chatId,
 // a new one for null), and the chat's last few turns go with the question, so follow-ups
 // ("and then?") make sense. document: the whole deck or page in front (answered from directly,
-// no web tools). onStep: live steps for the overlay's readout.
+// no web tools).
 export function createAssist({ config, guides, docs, llm, mcp = null, chats = null }) {
-  return async function assist({ question, context, tier = 'free', image, screen, document, targets, voice = false, userId = 'anonymous', chatId, onStep }) {
+  return async function assist({ question, context, tier = 'free', image, screen, document, targets, voice = false, userId = 'anonymous', chatId }) {
     const started = Date.now();
     const q = typeof question === 'string' ? question.trim() : '';
     if (!q) throw new HttpError(400, 'empty_question', 'Ask me something first.');
@@ -195,15 +195,6 @@ export function createAssist({ config, guides, docs, llm, mcp = null, chats = nu
     const picture = image === undefined || image === null || image === '' ? null : checkImage(image);
     const view = picture || screen === undefined || screen === null || screen === '' ? null : checkImage(screen);
     const doc = cleanDocument(document);
-    const step = (text) => {
-      try {
-        onStep?.(text);
-      } catch {
-        // the readout is a nicety; the answer matters
-      }
-    };
-    if (picture) step('Looking at the highlighted area');
-    else if (view) step('Looking at your screen');
     const base = { id: crypto.randomUUID(), tier };
     const thread = chats ? chats.resolve(userId, chatId) : null;
     const save = (turn) => {
@@ -213,11 +204,9 @@ export function createAssist({ config, guides, docs, llm, mcp = null, chats = nu
 
     // A highlighted region always goes to the model: it's a question about what's on screen.
     if (!picture && !wantsExplanation(q)) {
-      step('Checking the guides');
       const hit = matchGuide(q, guides.list(), ctx);
       if (hit) {
         const g = hit.guide;
-        step(`Found the guide “${g.title}”`);
         return {
           ...base,
           ...save({ answer: g.intro, source: 'guide', guide: { id: g.id, title: g.title } }),
@@ -251,22 +240,16 @@ export function createAssist({ config, guides, docs, llm, mcp = null, chats = nu
     }
 
     const smallTalk = !picture && !doc && isSmallTalk(q);
-    if (!smallTalk) step('Checking company procedures');
     const found = smallTalk ? { text: '', sources: [], relevant: true } : buildContext({ question: q, context: ctx, docs, guides });
-    const usedDoc = found.sources.find((s) => s.type === 'doc');
-    // "Sample SOP: logging site issues › Photos" shows as the section: "Using “Photos”".
-    if (usedDoc) step(`Using “${String(usedDoc.heading).split('›').pop().trim().slice(0, 40) || usedDoc.file}”`);
 
     // A how-to question, no recorded guide, and the controls on screen: GOAT plans a guide from
     // the procedures and what's on screen. Without a plan that starts on a real control, it
     // answers in words as usual.
     const controls = !picture && HOW_TO.test(q) && !aboutAnotherApp(q, ctx) ? cleanTargets(targets) : [];
     if (controls.length) {
-      step('Planning the steps');
       const history = chats ? chats.history(thread).slice(-2) : [];
       const plan = await planGuide({ chat: ask, question: q, ctx, procedures: found.text, doc, targets: controls, history });
       if (plan) {
-        step(`Found “${plan.steps[0].label}” on screen`);
         const id = `planned-${base.id.slice(0, 8)}`;
         return {
           ...base,
@@ -309,7 +292,6 @@ export function createAssist({ config, guides, docs, llm, mcp = null, chats = nu
     const searched = [];
     for (let round = 0; ; ) {
       const offerTools = tools.length > 0 && round < MAX_TOOL_ROUNDS;
-      step(thinking ? 'Thinking it through' : 'Writing the answer');
       const r = await chat({ think: thinking, tools: offerTools ? tools : undefined, thinkBudgetMs: thinking ? config.thinkBudgetMs : 0 });
       thought ||= Boolean(r.thinking);
       if (r.cut) {
@@ -325,7 +307,6 @@ export function createAssist({ config, guides, docs, llm, mcp = null, chats = nu
         for (const call of r.toolCalls.slice(0, 2)) {
           const name = call.function?.name;
           const args = toolArgs(call);
-          step(typeof args.query === 'string' && args.query ? `Searching the web for “${args.query.slice(0, 40)}”` : 'Searching the web');
           const result = await mcp.call(name, args);
           searched.push({ tool: name, query: typeof args.query === 'string' ? args.query : '', urls: result.urls });
           messages.push({ role: 'tool', tool_name: name, content: result.text });

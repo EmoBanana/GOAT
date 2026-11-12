@@ -1133,21 +1133,23 @@ await check('account and sign-in are small cards at the bottom right, clear of t
   assert.equal((await ui()).panel, null);
 });
 
-await check('while GOAT works, the readout beside the cursor shows each step', async () => {
-  await setReply('ask', LLM_REPLY, 6500);
+await check('while GOAT works, a "Thinking…" pill sits beside the cursor, and nothing else', async () => {
+  const pill = () =>
+    page.evaluate(() => {
+      const el = document.querySelector('#goat-cursor .pill');
+      return { shown: Boolean(el.offsetParent), text: el.textContent, lines: document.querySelectorAll('#goat-cursor li').length };
+    });
+  assert.equal((await pill()).shown, false, 'hidden until GOAT is working');
+  await setReply('ask', LLM_REPLY, 1500);
   await askVia('what does slide 3 say?');
-  await until(() => page.evaluate(() => !document.querySelector('.readout').offsetParent === false), 'the readout');
-  assert.deepEqual(await page.evaluate(() => window.GOATUI.steps()), ['Working on it']);
+  await until(async () => (await pill()).shown, 'the pill');
+  // Whatever main sends meanwhile, the pill stays as it is: there is no list of steps.
   await emit({ type: 'progress', step: 'Reading the deck' });
-  await emit({ type: 'progress', step: 'Checking the guides' });
-  await emit({ type: 'progress', step: 'Reading the deck' }); // only new steps are added
-  await emit({ type: 'progress', step: 'Writing the answer' });
-  const lines = await page.evaluate(() => [...document.querySelectorAll('.readout li')].map((li) => [li.className, li.textContent]));
-  assert.deepEqual(lines, [['done', 'Checking the guides'], ['done', 'Reading the deck'], ['now', 'Writing the answer']]);
-  await shot('ui-21-readout');
-  // A step that runs long gets a short filler line.
-  await until(() => page.evaluate(() => window.GOATUI.steps().at(-1) === 'Still working on it'), 'the filler', 6000);
+  assert.deepEqual(await pill(), { shown: true, text: 'Thinking…', lines: 0 });
+  assert.equal(await page.evaluate(() => document.querySelector('#goat-cursor').classList.contains('thinking')), true);
+  await shot('ui-21-thinking');
   await until(async () => (await bubble()).visible && /evidence/.test((await bubble()).text), 'the answer', 4000);
+  assert.equal((await pill()).shown, false);
   assert.equal(await page.evaluate(() => document.querySelector('#goat-cursor').classList.contains('thinking')), false);
   await setReply('ask', LLM_REPLY);
 });

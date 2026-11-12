@@ -258,10 +258,6 @@ try {
     const before = ollama.state.reply;
     const plan = { possible: true, intro: "Here's how to search on Google.", steps: [{ target: 'Search', say: 'Click the search box and type what you want.' }, { target: 'Google Search', say: 'Then click Google Search.' }] };
     ollama.state.reply = (body) => (body.format ? JSON.stringify(plan) : before(body));
-    await page.evaluate(() => {
-      window.__showSteps = [];
-      window.GOATUI.onEvent('step', (s) => window.__showSteps.push(s.text));
-    });
     try {
       ollama.calls.length = 0;
       // "Show me" in the middle of the question, as people say it.
@@ -272,7 +268,6 @@ try {
       const trail = fs.readFileSync(path.join(userData, 'goat.log'), 'utf8').trim().split('\n').at(-1);
       assert.match(trail, /ask \(show me\) with Antigravity IDE in front \| opened Google: up in Microsoft Edge after \d+ ms \| 2 controls \| guide planned, 2 steps, \d+ ms$/);
       assert.doesNotMatch(fs.readFileSync(path.join(userData, 'goat.log'), 'utf8'), /search on google|main\.js|google\.com/i, 'no questions, window titles or addresses');
-      assert.ok((await page.evaluate(() => window.__showSteps)).includes('Opening Google'), 'the readout says what it opened');
       const planned = ollama.chats().find((c) => c.body.format);
       assert.match(planned.body.messages.at(-1).content, /^App: Microsoft Edge · Window: Google/, 'planned on the page it opened');
       assert.ok(planned.body.messages.at(-1).content.includes('- "Search" combobox'));
@@ -522,23 +517,7 @@ try {
     await page.keyboard.press('Escape');
   });
 
-  await check('asking in a browser reads the whole page for context, and the readout shows each step', async () => {
-    await page.evaluate(() => {
-      window.__steps = [];
-      window.__events = [];
-      window.GOATUI.onEvent('step', (s) => window.__steps.push(s.text));
-      for (const type of ['ask', 'progress', 'reply']) window.GOATUI.onEvent(type, (m) => window.__events.push(`${type} ${m?.step || m?.question || m?.say || ''}`.slice(0, 80)));
-    });
-    // And main's side: what it sends the overlay during this ask, printed if a step goes missing.
-    await app.evaluate(({ BrowserWindow }) => {
-      const wc = BrowserWindow.getAllWindows()[0].webContents;
-      globalThis.__sent = [];
-      if (!wc.__logged) {
-        const send = wc.send.bind(wc);
-        wc.send = (channel, msg) => (globalThis.__sent.push(`${msg?.type} ${msg?.step || ''}`.trim()), send(channel, msg));
-        wc.__logged = true;
-      }
-    });
+  await check('asking in a browser reads the whole page for context', async () => {
     const doc = { kind: 'page', title: 'Issues - Autodesk Build', url: 'https://acc.autodesk.com/build/issues?projectId=1', text: 'Issue 42: Crack in pier P3, assigned to Pat, due Friday.' };
     await app.evaluate((_electron, value) => globalThis.__goatTest.setFakeDoc(value), JSON.stringify(doc));
     ollama.calls.length = 0;
@@ -546,14 +525,6 @@ try {
     await until(() => ollama.chats().length >= 1, 'the question to reach Gemma');
     const msg = ollama.chats()[0].body.messages.at(-1).content;
     assert.match(msg, /^The page open in Google Chrome, "Issues - Autodesk Build" \(https:\/\/acc\.autodesk\.com\/build\/issues\):\nIssue 42: Crack in pier P3/);
-    await until(() => page.evaluate(() => window.__steps.includes('Writing the answer')), 'the steps').catch(async (err) => {
-      const seen = await page.evaluate(() => ({ steps: window.__steps, events: window.__events }));
-      const sent = await app.evaluate(() => globalThis.__sent);
-      throw new Error(`${err.message}\nsteps shown: ${seen.steps.join(' > ')}\noverlay got: ${seen.events.join(' | ')}\nmain sent: ${sent.filter((s) => s.startsWith('progress')).join(' | ')}`);
-    });
-    const steps = await page.evaluate(() => window.__steps);
-    assert.ok(steps.indexOf('Reading the page') >= 0 && steps.indexOf('Reading the page') < steps.indexOf('Writing the answer'), steps.join(' > '));
-    assert.ok(steps.includes('Checking company procedures'), steps.join(' > '));
     await app.evaluate(() => globalThis.__goatTest.setFakeDoc(''));
     await until(() => page.evaluate(() => !document.getElementById('goat-bubble').hidden), 'the answer');
   });

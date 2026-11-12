@@ -73,9 +73,8 @@
   const onScreen = (p) => ({ x: clamp(p.x, 4, window.innerWidth - 4), y: clamp(p.y, 4, window.innerHeight - 4) });
 
   // ---------- blue cursor ----------
-  // While GOAT works, a small readout beside the cursor shows what it's doing, step by step.
-  els.cursor.innerHTML = `${ART.cursorSvg()}<div class="readout" aria-live="polite"><ol></ol></div>`;
-  const readout = els.cursor.querySelector('.readout ol');
+  // While GOAT works, the cursor pulses and a small pill beside it says "Thinking…".
+  els.cursor.innerHTML = `${ART.cursorSvg()}<span class="pill" aria-live="polite">Thinking…</span>`;
   let drawn = { x: NaN, y: NaN };
   function renderCursor() {
     if (drawn.x === state.pos.x && drawn.y === state.pos.y) return;
@@ -88,46 +87,9 @@
     renderCursor();
     els.cursor.classList.add('ready');
   }
-  // Steps come from main and the server ("Reading the deck", "Checking the guides"…). When one
-  // runs long, a short filler line says GOAT is still on it.
-  const STEPS_SHOWN = 3;
-  const FILLER_MS = 5000;
-  const FILLERS = ['Still working on it', 'Nearly there'];
-  let steps = [];
-  let fillerTimer = null;
-  function renderSteps() {
-    readout.replaceChildren(
-      ...steps.slice(-STEPS_SHOWN).map((text, i, shown) => {
-        const li = el('li', i === shown.length - 1 ? 'now' : 'done');
-        li.append(el('span', null, text));
-        return li;
-      }),
-    );
-  }
-  function armFiller(n = 0) {
-    clearTimeout(fillerTimer);
-    if (!state.thinking || n >= FILLERS.length) return;
-    fillerTimer = setTimeout(() => {
-      steps.push(FILLERS[n]);
-      renderSteps();
-      armFiller(n + 1);
-    }, FILLER_MS);
-  }
-  function addStep(text) {
-    const t = String(text || '').trim().slice(0, 80);
-    if (!state.thinking || !t || steps[steps.length - 1] === t) return;
-    steps = steps.filter((s) => !FILLERS.includes(s)).concat(t);
-    renderSteps();
-    armFiller();
-    emit('step', { text: t });
-  }
-  function setThinking(on, first = 'Working on it') {
+  function setThinking(on) {
     state.thinking = Boolean(on);
     els.cursor.classList.toggle('thinking', state.thinking);
-    clearTimeout(fillerTimer);
-    steps = state.thinking ? [first] : [];
-    renderSteps();
-    if (state.thinking) armFiller();
   }
 
   function onCursor(p) {
@@ -832,8 +794,7 @@
       playGuide(reply.guide);
       return;
     }
-    // The answer speaks for itself: the readout already showed what GOAT did, and web sources
-    // are the one footnote worth keeping.
+    // The answer speaks for itself: web sources are the one footnote worth keeping.
     const hosts = (reply.sources || [])
       .filter((s) => s.type === 'web')
       .map((s) => {
@@ -955,8 +916,6 @@
     showRing,
     hideRing,
     setThinking,
-    addStep,
-    steps: () => steps.slice(),
     toLocal,
     updateClickThrough,
     // Voice turn on/off; heard is the transcript shown above the spoken answer.
@@ -1002,7 +961,6 @@
         setInsets(message.insets);
       }
       else if (message.type === 'open-ask') openAsk(message);
-      else if (message.type === 'progress') addStep(message.step);
       else if (message.type === 'notice' && message.text) toast(String(message.text), { ms: 9000 });
       emit(message.type, message);
     });

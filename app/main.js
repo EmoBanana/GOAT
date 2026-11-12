@@ -343,7 +343,6 @@ const docHints = new Set();
 async function readFrontDocument({ quiet = false } = {}) {
   const kind = documentKind(askContext.app);
   if (!kind || process.env.GOAT_DOC_CONTEXT === 'off') return null;
-  send({ type: 'progress', step: kind === 'deck' ? 'Reading the deck' : 'Reading the page' });
   const doc = await readDocument({ app: askContext.app });
   if (doc && doc.error) {
     const hint = documentHint(doc);
@@ -367,7 +366,6 @@ let guideApp = { app: '', pid: 0 };
 // questions get the hint once.
 async function readFrontTargets({ showMe = false } = {}) {
   guideApp = { app: askContext.app || '', pid: askPid };
-  send({ type: 'progress', step: 'Looking at the controls on screen' });
   const read = await readTargets(guideApp);
   const targets = read?.elements?.length ? read.elements : null;
   const failed = read?.error || read?.pageError || '';
@@ -400,34 +398,6 @@ function openPlace(place) {
   return place.url ? shell.openExternal(place.url) : Promise.reject(new Error('Apps open by name on macOS only.'));
 }
 const bringForward = (name) => (isMac && !('GOAT_FAKE_OPENS' in process.env) ? runOpen(['-a', name]) : Promise.resolve());
-
-// Polls the server for an ask's steps and passes new ones to the overlay. stop() reads once more,
-// so a quick answer still shows its steps before the reply arrives.
-function watchSteps(progressId) {
-  let shown = 0;
-  let running = null;
-  const poll = () => {
-    running ||= api
-      .progress(progressId)
-      .then((r) => {
-        const all = Array.isArray(r?.steps) ? r.steps : [];
-        for (const step of all.slice(shown)) send({ type: 'progress', step });
-        shown = Math.max(shown, all.length);
-      })
-      .finally(() => {
-        running = null;
-      });
-    return running;
-  };
-  const timer = setInterval(poll, 300);
-  return {
-    stop: async () => {
-      clearInterval(timer);
-      await running;
-      await poll();
-    },
-  };
-}
 
 // ---------- account ----------
 // GOAT starts by asking you to sign in: create an account (email or social) or connect a wallet
@@ -576,7 +546,6 @@ function registerIpc() {
     const region = validRegion(payload?.region);
     let image;
     if (region) {
-      send({ type: 'progress', step: 'Looking at the highlighted area' });
       try {
         image = await captureRegion(region, { win, fake: process.env.GOAT_FAKE_CAPTURE === '1' });
       } catch (err) {
@@ -596,7 +565,6 @@ function registerIpc() {
     const trail = [`${payload?.voice === true ? 'voice ask' : 'ask'}${showMe ? ' (show me)' : howTo ? ' (how-to)' : ''} with ${askContext.app || 'no app'} in front`];
     const place = region ? null : placeToOpen(question, askContext);
     if (place) {
-      send({ type: 'progress', step: `Opening ${place.name}` });
       const began = Date.now();
       const front = await bringUp(place, { open: openPlace, sample: () => sampleActiveWindow({ timeoutMs: 700 }), tab: frontTab, activate: bringForward });
       if (front && !isSelf(front)) {
@@ -615,15 +583,7 @@ function registerIpc() {
     const targets = controls?.targets || null;
     if (howTo && !region) trail.push(targets ? `${targets.length} controls${controls.why ? ` (${controls.why})` : ''}` : `no controls (${controls?.why})`);
     if (document) trail.push(`${document.kind} read`);
-    // The server's steps ("Checking the guides"…) go to the readout while the answer comes.
-    const progressId = globalThis.crypto.randomUUID();
-    const steps = watchSteps(progressId);
-    let reply;
-    try {
-      reply = await api.assist({ question, context, image, screen: screenShot?.image, voice: payload?.voice === true, chatId: chatIdFrom(payload?.chatId), document, targets, progressId });
-    } finally {
-      await steps.stop();
-    }
+    const reply = await api.assist({ question, context, image, screen: screenShot?.image, voice: payload?.voice === true, chatId: chatIdFrom(payload?.chatId), document, targets });
     trail.push(reply.error ? `failed: ${reply.error}` : reply.source === 'guide' ? `guide ${reply.planned ? 'planned' : reply.guide?.id}, ${reply.guide?.steps?.length} steps, ${reply.latencyMs} ms` : `answered in words, ${reply.latencyMs} ms`);
     note(trail.join(' | '));
     // Asked to be shown, the controls were there, and still no guide: say so rather than only answering.
