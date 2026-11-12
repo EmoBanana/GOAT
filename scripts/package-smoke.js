@@ -117,7 +117,7 @@ if (winAsar && fs.existsSync(winAsar)) {
   const wasar = readAsar(winAsar);
   check('Windows: the download holds only the core, like the Mac one', () => holdsOnlyTheCore(wasar));
   check('Windows: its package.json names the server it was built for', () => startsTheAppForItsServer(wasar, winBuild));
-  check('Windows: the zip unpacks to a GOAT folder with GOAT.exe, the app and the blue tray icon', () => {
+  check('Windows: the zip unpacks to a GOAT folder with GOAT.exe, the app and its tray icon', () => {
     const entries = execFileSync('unzip', ['-Z1', path.join(root, 'dist', winBuild.file)], { encoding: 'utf8', maxBuffer: 1 << 24 }).split('\n');
     for (const f of ['GOAT/GOAT.exe', 'GOAT/resources/app.asar']) assert.ok(entries.includes(f), `${f} is in the zip`);
     assert.ok(wasar.files.includes('app/assets/tray.png'), 'the Windows tray icon ships');
