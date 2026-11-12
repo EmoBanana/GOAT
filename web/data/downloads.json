@@ -1,0 +1,35 @@
+{
+  "version": "0.1.0",
+  "builds": [
+    {
+      "platform": "darwin",
+      "arch": "arm64",
+      "file": "GOAT-0.1.0-mac-arm64.zip",
+      "bytes": 123477612,
+      "sha256": "59b76b137974d7e8d9dbdc53c0328db99d25954fd2fce5ff8733b302f7c6269a",
+      "serverUrl": "http://127.0.0.1:8402",
+      "builtAt": "2026-11-12T11:16:50.191Z",
+      "url": null
+    },
+    {
+      "platform": "win32",
+      "arch": "x64",
+      "file": "GOAT-0.1.0-win-x64.zip",
+      "bytes": 162697330,
+      "sha256": "70d97063ade28f3498aa7f82ef2d7b6ac41ac21607b8e18df030588e51167cb1",
+      "serverUrl": "http://127.0.0.1:8402",
+      "builtAt": "2026-11-12T11:17:09.538Z",
+      "url": null
+    }
+  ],
+  "pricing": {
+    "payments": "x402-local",
+    "network": "eip155:84532",
+    "assistUsd": 0.01,
+    "assistMyr": 0.04,
+    "proUsd": 1,
+    "proMyr": 4.2,
+    "proDays": 30,
+    "welcomeMyr": 2
+  }
+}

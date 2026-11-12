@@ -1,0 +1,986 @@
+/* GOAT. Neo-brutalist and minimal: white paper, 2px black rules, hard offset shadows, square
+   corners. GOAT blue is for actions and the cursor; signal yellow for the highlight, the price and
+   the tags. Archivo (widened for headings), Plex Mono for keys and labels. Three grouped sections,
+   each a few bordered panels, so the page stays short. */
+
+:root {
+  --paper: #ffffff;
+  --ink: #0a0a0a;
+  --ink-soft: #3b3b3b;
+  --grey: #f1f2f4;
+  --blue: #2563eb;
+  --blue-deep: #1d4ed8;
+  --yellow: #ffd60a;
+  --rule: 2px solid var(--ink);
+  --shadow: 6px 6px 0 var(--ink);
+  --sans: var(--font-archivo), 'Helvetica Neue', Arial, sans-serif;
+  --mono: var(--font-plex-mono), ui-monospace, Menlo, monospace;
+  --ui: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+  --max: 1160px;
+  --gutter: clamp(16px, 4vw, 40px);
+  color-scheme: light;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 400 1.0625rem/1.55 var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--yellow);
+  color: var(--ink);
+}
+
+a {
+  color: inherit;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+
+:focus-visible {
+  outline: 3px solid var(--blue);
+  outline-offset: 3px;
+}
+
+h1,
+h2,
+h3,
+p,
+dl,
+dd {
+  margin: 0;
+}
+
+code {
+  font: 500 0.86em/1.4 var(--mono);
+  overflow-wrap: anywhere;
+}
+
+mark {
+  padding: 0 0.06em;
+  background: var(--yellow);
+  color: inherit;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+kbd {
+  display: inline-block;
+  min-width: 1.9em;
+  padding: 0.08em 0.42em 0.12em;
+  border: 2px solid var(--ink);
+  background: var(--paper);
+  box-shadow: 2px 2px 0 var(--ink);
+  font: 600 0.74em/1.3 var(--mono);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.keys {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 0 0.18em;
+  vertical-align: 0.1em;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.wrap {
+  max-width: var(--max);
+  margin: 0 auto;
+  padding: 0 var(--gutter);
+}
+
+.tag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 3px 7px;
+  border: 2px solid var(--ink);
+  background: var(--yellow);
+  font: 600 0.68rem/1 var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  vertical-align: 0.3em;
+}
+
+.meta {
+  font: 500 0.8rem/1.45 var(--mono);
+  color: var(--ink-soft);
+}
+
+/* ---------- buttons ---------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 20px;
+  border: var(--rule);
+  background: var(--blue);
+  color: #fff;
+  font: 700 1rem/1 var(--sans);
+  text-decoration: none;
+  white-space: nowrap;
+  box-shadow: 4px 4px 0 var(--ink);
+  cursor: pointer;
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+.btn:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0 var(--ink);
+}
+.btn:active {
+  transform: translate(4px, 4px);
+  box-shadow: 0 0 0 var(--ink);
+}
+.btn-sm {
+  padding: 9px 14px;
+  font-size: 0.875rem;
+  box-shadow: 3px 3px 0 var(--ink);
+}
+.btn-lg {
+  padding: 18px 28px;
+  font-size: 1.125rem;
+}
+.btn-plain {
+  background: var(--paper);
+  color: var(--ink);
+}
+.btn[aria-disabled='true'] {
+  background: var(--grey);
+  color: var(--ink-soft);
+  box-shadow: none;
+  transform: none;
+  cursor: default;
+}
+.btn-arrow {
+  flex: none;
+  width: 12px;
+  height: 18px;
+}
+.dl-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+/* ---------- header ---------- */
+
+.bar {
+  border-bottom: var(--rule);
+}
+.bar-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 68px;
+}
+.wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1.4rem;
+  font-weight: 900;
+  font-variation-settings: 'wdth' 125;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+}
+.wordmark .logo {
+  width: 36px;
+  height: 34px;
+  /* The saucer and its shadow weigh the cup down; lift it to sit level with the word. */
+  transform: translateY(-3px);
+}
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+.nav a:not(.btn) {
+  font: 500 0.8rem/1 var(--mono);
+  letter-spacing: 0.06em;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+.nav a:not(.btn):hover {
+  text-decoration: underline;
+}
+
+/* ---------- hero: what GOAT is, the downloads, and the demo ---------- */
+
+.hero {
+  padding: clamp(32px, 5vh, 60px) 0 clamp(44px, 7vh, 80px);
+}
+.hero-top {
+  display: grid;
+  gap: 24px 56px;
+  align-items: end;
+  margin-bottom: 40px;
+}
+.hero h1 {
+  max-width: 16ch;
+  font-size: clamp(2.5rem, 4.6vw, 4.1rem);
+  font-weight: 800;
+  font-variation-settings: 'wdth' 118;
+  line-height: 0.95;
+  letter-spacing: -0.035em;
+}
+/* The tight leading would let the highlight touch the descenders above ("you"), so the
+   highlighted words sit a little lower. */
+.hero h1 mark {
+  position: relative;
+  top: 0.14em;
+}
+.hero-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 18px;
+}
+.lede {
+  max-width: 34rem;
+  font-size: clamp(1.06rem, 1.3vw, 1.2rem);
+  line-height: 1.5;
+}
+
+/* The demo: a mock app, with GOAT's cursor and bubble drawn as the app draws them. */
+.demo {
+  margin: 0;
+}
+.demo-frame {
+  position: relative;
+  overflow: hidden;
+  border: var(--rule);
+  background: #fff;
+  box-shadow: 10px 10px 0 var(--ink);
+}
+.demo-stage {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 960px;
+  height: 540px;
+  transform-origin: 0 0;
+  font-family: var(--ui);
+  color: #1f2937;
+}
+.app-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 38px;
+  padding: 0 14px;
+  border-bottom: 1px solid #dfe2e6;
+  background: #f6f7f9;
+  font-size: 12.5px;
+  color: #4b5563;
+}
+.app-dots {
+  display: inline-flex;
+  gap: 7px;
+}
+.app-dots i {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #d4d7dc;
+}
+.app-body {
+  display: grid;
+  grid-template-columns: 168px 1fr 292px;
+  height: 502px;
+}
+.app-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 16px 10px;
+  border-right: 1px solid #e5e7eb;
+  background: #fafbfc;
+}
+.app-nav span {
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 14px;
+  color: #374151;
+}
+.app-main {
+  padding: 20px 22px;
+}
+.app-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.app-h {
+  font-size: 20px;
+  font-weight: 600;
+  color: #111827;
+}
+.app-h-sm {
+  font-size: 16px;
+}
+.app-btn {
+  display: inline-block;
+  align-self: flex-start;
+  padding: 8px 14px;
+  border: 1px solid #c9ced6;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.app-btn-primary {
+  border-color: #1f2a44;
+  background: #1f2a44;
+  color: #fff;
+}
+.app-table {
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  font-size: 13px;
+}
+.app-row {
+  display: grid;
+  grid-template-columns: 54px 1fr 82px;
+  gap: 10px;
+  align-items: center;
+  padding: 11px 12px;
+  border-top: 1px solid #eef0f2;
+}
+.app-row-head {
+  border-top: 0;
+  background: #f9fafb;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #6b7280;
+}
+.app-id {
+  color: #6b7280;
+}
+.app-status {
+  justify-self: start;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 500;
+}
+.app-status-open {
+  background: #fde8e8;
+  color: #9b1c1c;
+}
+.app-status-in {
+  background: #fef3c7;
+  color: #92400e;
+}
+.app-status-closed {
+  background: #e7f6ec;
+  color: #1e6b3a;
+}
+.app-form {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  padding: 18px;
+  border-left: 1px solid #e5e7eb;
+}
+.app-label {
+  display: grid;
+  gap: 5px;
+  font-size: 12px;
+  color: #6b7280;
+}
+.app-field {
+  padding: 8px 10px;
+  border: 1px solid #c9ced6;
+  border-radius: 6px;
+  font-size: 13.5px;
+  color: #111827;
+}
+.app-drop {
+  border-style: dashed;
+  color: #6b7280;
+  text-align: center;
+}
+.demo-cursor {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 5;
+  width: 0;
+  height: 0;
+  visibility: hidden;
+  will-change: transform;
+}
+/* The cup points with the left edge of its rim, at (3, 9) in its 28 px box. */
+.demo-cursor svg {
+  position: absolute;
+  left: -3px;
+  top: -9px;
+  overflow: visible;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.2));
+}
+.demo-ring {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 4;
+  width: 0;
+  height: 0;
+  visibility: hidden;
+}
+.demo-ring::before,
+.demo-ring i {
+  content: '';
+  position: absolute;
+  left: -20px;
+  top: -20px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+}
+.demo-ring::before {
+  border: 2.5px solid var(--blue);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85), 0 0 0 6px rgba(37, 99, 235, 0.2);
+}
+.demo-ring i {
+  background: rgba(37, 99, 235, 0.22);
+  animation: goat-ring 1.4s ease-out infinite;
+}
+@keyframes goat-ring {
+  0% { transform: scale(0.6); opacity: 0.9; }
+  100% { transform: scale(2.1); opacity: 0; }
+}
+.demo-bubble {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 6;
+  width: 272px;
+  padding: 11px 13px;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.28), 0 0 0 1px rgba(15, 23, 42, 0.1);
+  color: #0f172a;
+  font: 13.5px/1.45 var(--ui);
+  visibility: hidden;
+}
+.demo-bubble-intro {
+  margin-bottom: 5px;
+  color: #64748b;
+  font-size: 12px;
+}
+.demo-bubble-text {
+  font-weight: 500;
+}
+.demo-bubble-step {
+  margin-top: 8px;
+  color: #64748b;
+  font-size: 11.5px;
+}
+.demo-bubble p:empty {
+  display: none;
+}
+.demo-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  margin-top: 26px;
+  font: 500 0.8rem/1.45 var(--mono);
+}
+.demo-counter {
+  min-width: 9.5em;
+  padding: 3px 8px;
+  border: 2px solid var(--ink);
+}
+.demo-counter:empty {
+  display: none;
+}
+.demo-caption {
+  color: var(--ink-soft);
+}
+/* On a phone the bubble is too small to read, so the step's words sit under the demo. */
+.demo-say {
+  display: none;
+}
+@media (max-width: 699px) {
+  .demo-say:not(:empty) {
+    display: block;
+    flex-basis: 100%;
+    font: 600 1rem/1.4 var(--sans);
+  }
+}
+
+/* ---------- sections ---------- */
+
+.section {
+  border-top: var(--rule);
+}
+.section > .wrap {
+  padding-block: clamp(44px, 7vh, 84px);
+}
+.section-head {
+  margin-bottom: 30px;
+}
+.section-label {
+  margin-bottom: 12px;
+  font: 600 0.8rem/1 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.section-head h2 {
+  max-width: 28ch;
+  font-size: clamp(1.8rem, 3.4vw, 2.8rem);
+  font-weight: 800;
+  font-variation-settings: 'wdth' 112;
+  line-height: 1.04;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+.panel {
+  padding: 22px;
+  border: var(--rule);
+  background: var(--paper);
+  box-shadow: var(--shadow);
+}
+.panel-title {
+  margin-bottom: 16px;
+  font: 600 0.8rem/1 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* How it works: the three steps ruled like a table, then four tiles */
+.steps {
+  display: grid;
+  margin: 0 0 24px;
+  padding: 0;
+  list-style: none;
+  border: var(--rule);
+  box-shadow: var(--shadow);
+}
+.steps li {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 20px 22px 22px;
+  border-top: var(--rule);
+}
+.steps li:first-child {
+  border-top: 0;
+}
+.step-n {
+  font: 600 0.8rem/1 var(--mono);
+}
+.steps h3 {
+  font-size: 1.35rem;
+  font-weight: 800;
+  font-variation-settings: 'wdth' 112;
+  line-height: 1.1;
+}
+.steps p {
+  color: var(--ink-soft);
+}
+.features {
+  display: grid;
+  gap: 20px;
+}
+.feature {
+  padding: 18px 18px 20px;
+  border: var(--rule);
+  box-shadow: var(--shadow);
+}
+.feature h3 {
+  margin-bottom: 6px;
+  font-size: 1.2rem;
+  font-weight: 800;
+  font-variation-settings: 'wdth' 112;
+}
+.feature p {
+  font-size: 0.97rem;
+  color: var(--ink-soft);
+}
+
+/* Body copy is justified. Hyphenation keeps the narrow columns (the feature tiles are about
+   240 px) from opening wide gaps between words. */
+.lede,
+.steps p,
+.feature p,
+.privacy dd,
+.flow-foot,
+.req {
+  text-align: justify;
+  hyphens: auto;
+  -webkit-hyphens: auto;
+}
+/* Key caps and code (like the Timesheet tile's file name) can't stretch or break, so a justified
+   line around them opens wide gaps. */
+.steps p:has(kbd),
+.feature p:has(code) {
+  text-align: left;
+}
+
+/* Pricing and privacy: the price, the payment, and what GOAT leaves alone */
+.bento {
+  display: grid;
+  gap: 24px;
+}
+.panel-price {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 22px;
+}
+.price-tag {
+  display: inline-block;
+  padding: 18px 24px 20px;
+  border: var(--rule);
+  background: var(--yellow);
+}
+.price {
+  display: block;
+  font-size: clamp(2.6rem, 4vw, 3.6rem);
+  font-weight: 900;
+  font-variation-settings: 'wdth' 125;
+  line-height: 0.9;
+  letter-spacing: -0.03em;
+  white-space: nowrap;
+}
+.price-unit {
+  display: block;
+  margin-top: 10px;
+  font: 600 0.8rem/1 var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.facts {
+  align-self: stretch;
+  border-top: var(--rule);
+}
+.facts > div {
+  display: grid;
+  gap: 2px 18px;
+  padding: 11px 0;
+  border-bottom: var(--rule);
+}
+.facts dt {
+  font-weight: 800;
+  font-variation-settings: 'wdth' 110;
+}
+.facts dd {
+  color: var(--ink-soft);
+}
+.flow {
+  margin: 0;
+}
+.flow-head {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  padding-bottom: 10px;
+  border-bottom: 2px dashed var(--ink);
+}
+.flow-head span:last-child {
+  text-align: right;
+}
+.flow-head b {
+  display: block;
+  font-weight: 800;
+  font-variation-settings: 'wdth' 110;
+}
+.flow-head small {
+  display: block;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  color: var(--ink-soft);
+}
+.flow-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.flow-step {
+  padding-top: 13px;
+}
+.flow-words {
+  display: block;
+}
+.flow-words code {
+  display: block;
+  font-weight: 600;
+}
+.flow-words span {
+  display: block;
+  font-size: 0.86rem;
+  color: var(--ink-soft);
+}
+.flow-back .flow-words {
+  text-align: right;
+}
+.flow-arrow {
+  position: relative;
+  display: block;
+  height: 2px;
+  margin-top: 7px;
+  background: var(--ink);
+}
+.flow-arrow::after {
+  content: '';
+  position: absolute;
+  top: -6px;
+  border: 7px solid transparent;
+}
+.flow-out .flow-arrow {
+  transform-origin: left center;
+}
+.flow-out .flow-arrow::after {
+  right: -2px;
+  border-right: 0;
+  border-left: 11px solid var(--ink);
+}
+.flow-back .flow-arrow {
+  transform-origin: right center;
+}
+.flow-back .flow-arrow::after {
+  left: -2px;
+  border-left: 0;
+  border-right: 11px solid var(--ink);
+}
+.flow-foot {
+  margin-top: 18px;
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+}
+.privacy {
+  display: grid;
+  gap: 16px 28px;
+}
+.privacy > div {
+  padding-top: 10px;
+  border-top: 2px solid var(--ink);
+}
+.privacy dt {
+  font-weight: 800;
+  font-variation-settings: 'wdth' 110;
+}
+.privacy dd {
+  margin-top: 4px;
+  font-size: 0.95rem;
+  color: var(--ink-soft);
+}
+
+/* Download: one card per platform, then the hotkeys for both */
+.platforms {
+  display: grid;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+.platform {
+  display: flex;
+  flex-direction: column;
+}
+.platform h3 {
+  margin-bottom: 16px;
+  font-size: 1.5rem;
+  font-weight: 800;
+  font-variation-settings: 'wdth' 118;
+}
+.platform-get {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 18px;
+  margin-bottom: 18px;
+}
+.install {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: var(--rule);
+  counter-reset: step;
+}
+.install li {
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  gap: 8px;
+  padding: 11px 0;
+  border-bottom: 2px solid var(--ink);
+  font-size: 0.97rem;
+  counter-increment: step;
+}
+.install li::before {
+  content: counter(step);
+  font: 600 0.85rem/1.65 var(--mono);
+}
+.platform-note {
+  margin-top: 14px;
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+}
+.sha {
+  margin-top: auto;
+  padding-top: 14px;
+  font: 0.72rem/1.45 var(--mono);
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+.keys-panel {
+  margin-bottom: 20px;
+}
+.hotkeys {
+  width: 100%;
+  border-collapse: collapse;
+}
+.hotkeys th {
+  padding: 0 12px 10px 0;
+  border-bottom: var(--rule);
+  font: 600 0.75rem/1 var(--mono);
+  letter-spacing: 0.06em;
+  text-align: left;
+  text-transform: uppercase;
+}
+.hotkeys td {
+  padding: 11px 12px 11px 0;
+  border-bottom: 2px solid var(--ink);
+  vertical-align: top;
+}
+.hotkeys td:last-child {
+  color: var(--ink-soft);
+}
+.hotkeys tr:last-child td {
+  border-bottom: 0;
+}
+.req {
+  padding: 13px 16px;
+  border: var(--rule);
+  background: var(--grey);
+  font-size: 0.95rem;
+}
+
+/* Footer */
+.foot {
+  border-top: var(--rule);
+}
+.foot-inner {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 10px 24px;
+  padding-block: 20px 28px;
+  font: 500 0.8rem/1.45 var(--mono);
+}
+
+/* ---------- wider screens ---------- */
+
+@media (min-width: 640px) {
+  .features {
+    grid-template-columns: 1fr 1fr;
+  }
+  .privacy {
+    grid-template-columns: 1fr 1fr;
+  }
+  .facts > div {
+    grid-template-columns: 9.5rem 1fr;
+  }
+}
+
+@media (min-width: 900px) {
+  .steps {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .steps li {
+    border-top: 0;
+    border-left: var(--rule);
+  }
+  .steps li:first-child {
+    border-left: 0;
+  }
+  .platforms {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (min-width: 960px) {
+  .hero-top {
+    grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  }
+  .bento {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  }
+  .panel-privacy {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (min-width: 1100px) {
+  .features {
+    grid-template-columns: repeat(4, 1fr);
+  }
+  .privacy {
+    grid-template-columns: repeat(5, 1fr);
+  }
+}
+
+/* Phones: the hotkey table stacks, Mac and Windows side by side over what the keys do. */
+@media (max-width: 639px) {
+  .nav a:not(.btn) {
+    display: none;
+  }
+  .hotkeys thead {
+    display: none;
+  }
+  .hotkeys tr {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    padding: 10px 0;
+    border-bottom: 2px solid var(--ink);
+  }
+  .hotkeys tr:last-child {
+    border-bottom: 0;
+  }
+  .hotkeys td {
+    padding: 0 8px 6px 0;
+    border-bottom: 0;
+  }
+  .hotkeys td:last-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .btn {
+    transition: none;
+  }
+  .demo-ring i {
+    animation: none;
+  }
+}
