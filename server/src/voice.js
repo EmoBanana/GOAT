@@ -15,12 +15,15 @@ export function vocabulary(projectNames = []) {
 
 // Measured on Gemma 4 E4B (30 utterances, 5 accents): domain terms in the system message, an
 // explicit NO_SPEECH and "never this list" gave the most perfect transcripts, clean and noisy,
-// and stopped silence turning into invented sentences or a recital of the term list.
+// and stopped silence turning into invented sentences or a recital of the term list. "If there is
+// no clear speech" made it give up on unfamiliar words ("what is model context protocol" came back
+// NO_SPEECH every time), so NO_SPEECH is now only for silence or noise, and every spoken word is
+// written, listed or not. Adding a phrase to the list instead made Gemma write just the phrase.
 export function transcriptionMessages(audio, terms) {
   return [
     {
       role: 'system',
-      content: `You are a speech-to-text engine for engineers at a construction company. Terms they use: ${terms.join(', ')}. Output only the words actually spoken, never this list. If there is no clear speech, output NO_SPEECH.`,
+      content: `You are a speech-to-text engine for engineers at a construction company. Terms they use: ${terms.join(', ')}. Write every word that is spoken, in order, including words that are not in this list; never write the list itself. Write NO_SPEECH only if the audio is silent or just noise.`,
     },
     { role: 'user', content: 'Transcribe this audio.', images: [audio] },
   ];

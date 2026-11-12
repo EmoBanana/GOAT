@@ -59,7 +59,8 @@ describe('POST /api/voice/transcribe', () => {
     const [system, user] = call.body.messages;
     assert.match(system.content, /speech-to-text engine/);
     assert.match(system.content, /Alpha Viaduct/, 'project names from config/projects.json');
-    assert.match(system.content, /never this list.*NO_SPEECH/);
+    assert.match(system.content, /including words that are not in this list; never write the list itself/);
+    assert.match(system.content, /NO_SPEECH only if the audio is silent or just noise/);
     assert.deepEqual(user, { role: 'user', content: 'Transcribe this audio.', images: [wav()] });
   });
 

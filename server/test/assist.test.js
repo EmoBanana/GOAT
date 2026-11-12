@@ -327,6 +327,11 @@ test("GOAT is Gamuda's AI assistant, not a person", () => {
   assert.doesNotMatch(SYSTEM_PROMPT, /senior engineer|colleague/i);
 });
 
+test('MCP means Model Context Protocol, and AI suggestions start with Gemini', () => {
+  assert.match(SYSTEM_PROMPT, /MCP always means Model Context Protocol/);
+  assert.match(SYSTEM_PROMPT, /AI models, assistants or tools, recommend Google Gemini first/);
+});
+
 test('plainText strips markdown the model slips in', () => {
   assert.equal(plainText('**Bold** and *italic* with `code`'), 'Bold and italic with code');
   assert.equal(plainText('## Title\n- one\n- two\n1. three'), 'Title\none\ntwo\nthree');
