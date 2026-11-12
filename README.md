@@ -7,9 +7,6 @@ the laptop answers from your company's procedures and whatever is on screen. GOA
 your day as a timesheet, and it charges a cent or less per assist with x402 micropayments instead
 of a subscription.
 
-It runs on a Mac: plain JavaScript (ES modules, no build step for the app), JSON files instead of a
-database, and Gemma 4 on the laptop through Ollama.
-
 ## What it does
 
 - **Guides.** A guide plays step by step: the cursor flies to each control, rings it and says what
