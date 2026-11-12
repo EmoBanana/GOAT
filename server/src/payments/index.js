@@ -30,6 +30,51 @@ export function ensureTreasury(dataDir) {
   return treasury;
 }
 
+// The public facilitator (x402.org) fails settlements that reach it at the same moment: its own
+// transactions collide and come back as invalid_exact_evm_transaction_failed ("Missing or invalid
+// parameters" from eth_sendRawTransaction). Measured on 12 Nov: four asks settled at once, three
+// failed; one at a time, none did. So GOAT settles one payment at a time and tries a failed
+// submission again. An earlier try that landed after all shows up as its nonce being used, which
+// counts as paid. Everything else goes straight to the facilitator.
+const RETRY_SETTLE = new Set(['invalid_exact_evm_transaction_failed', 'unexpected_settle_error']);
+export function steadyFacilitator(inner, { tries = 3, waitMs = 700, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), logger = console } = {}) {
+  let queue = Promise.resolve();
+  async function settleWithRetries(payload, requirements) {
+    for (let attempt = 1; ; attempt += 1) {
+      let result;
+      let error = null;
+      try {
+        result = await inner.settle(payload, requirements);
+      } catch (err) {
+        error = err;
+        result = { success: false, errorReason: err.errorReason || 'unexpected_settle_error' };
+      }
+      if (result.success) return result;
+      if (attempt > 1 && result.errorReason === 'invalid_exact_evm_nonce_already_used') {
+        return { success: true, transaction: '', network: requirements.network, payer: payload?.payload?.authorization?.from };
+      }
+      if (!RETRY_SETTLE.has(result.errorReason) || attempt >= tries) {
+        if (error) throw error;
+        return result;
+      }
+      logger.warn(`[payments] Settlement failed (${result.errorReason}); trying again (${attempt + 1} of ${tries})`);
+      await sleep(waitMs * attempt);
+    }
+  }
+  function settle(payload, requirements) {
+    const run = queue.then(() => settleWithRetries(payload, requirements));
+    queue = run.catch(() => {});
+    return run;
+  }
+  return new Proxy(inner, {
+    get(target, prop) {
+      if (prop === 'settle') return settle;
+      const value = target[prop];
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+}
+
 // x402 pay-per-assist. x402-local: real handshake and signatures, settled on data/ledger.json.
 // x402: settled on Base Sepolia by X402_FACILITATOR_URL. Every assist is paid, Pro included: Pro
 // buys the better model and voice, not free asks.
@@ -39,7 +84,7 @@ export function createPayments({ config, users, logger = console }) {
   const ledger = createLedger({ dataDir: config.dataDir });
   const payTo = config.payTo || ensureTreasury(config.dataDir).address;
   const facilitator =
-    mode === 'x402' ? new HTTPFacilitatorClient({ url: config.facilitatorUrl }) : createLocalFacilitator({ network: config.network, ledger });
+    mode === 'x402' ? steadyFacilitator(new HTTPFacilitatorClient({ url: config.facilitatorUrl }), { logger }) : createLocalFacilitator({ network: config.network, ledger });
   const server = new x402ResourceServer(facilitator).register(config.network, new ExactEvmScheme());
   server.onAfterSettle(async ({ result, requirements }) => {
     if (mode === 'x402') {

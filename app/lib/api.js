@@ -34,12 +34,24 @@ export function createApi({ baseUrl, userId, walletAddress = null, fetchImpl = g
       data = null;
     }
     if (res.status === 402) {
-      const reason = typeof data?.error === 'string' ? data.error : '';
+      // Why: the body's error when the payment check failed, the payment-response header when
+      // settling it failed (that body has no error). Only a real shortfall is "too low"; anything
+      // else (e.g. the facilitator's transaction failing) charged nothing and can be asked again.
+      let reason = typeof data?.error === 'string' ? data.error : '';
+      const receipt = res.headers.get('payment-response');
+      if (receipt) {
+        try {
+          reason = decodePaymentResponseHeader(receipt).errorReason || reason;
+        } catch {
+          // keep the body's reason
+        }
+      }
       return {
         error: 'payment_required',
-        message: !reason || /insufficient/i.test(reason)
+        reason,
+        message: /insufficient/i.test(reason)
           ? 'Your GOAT balance is too low. Top up from the RM chip in the ask panel.'
-          : `The payment didn't go through (${reason}).`,
+          : "The payment didn't go through just then, so nothing was charged. Ask again.",
         status: 402,
       };
     }

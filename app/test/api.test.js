@@ -54,3 +54,36 @@ test('an unreachable server or a timeout is a friendly error', async () => {
   const slow = createApi({ baseUrl, userId: 'x', timeoutMs: 100 });
   assert.equal((await slow.request('GET', '/api/slow')).error, 'server_timeout');
 });
+
+test('a refused payment says "balance too low" only when it is; a failed settlement says ask again', async () => {
+  const receipt = (obj) => Buffer.from(JSON.stringify(obj)).toString('base64');
+  const replies = {
+    // settling failed (the facilitator's transaction): the reason is only in the header
+    settle: { headers: { 'payment-response': receipt({ success: false, errorReason: 'invalid_exact_evm_transaction_failed', transaction: '', network: 'eip155:84532' }) }, body: {} },
+    short: { headers: {}, body: { error: 'invalid_exact_evm_insufficient_balance' } },
+    unpaid: { headers: {}, body: { error: 'Payment required' } },
+  };
+  const srv = http.createServer(async (req, res) => {
+    const chunks = [];
+    for await (const c of req) chunks.push(c);
+    const reply = replies[JSON.parse(Buffer.concat(chunks)).question];
+    res.writeHead(402, { 'content-type': 'application/json', ...reply.headers });
+    res.end(JSON.stringify(reply.body));
+  });
+  await new Promise((resolve) => srv.listen(0, '127.0.0.1', resolve));
+  try {
+    const api = createApi({ baseUrl: `http://127.0.0.1:${srv.address().port}`, userId: 'payer' });
+    const settle = await api.assist({ question: 'settle', context: {} });
+    assert.equal(settle.error, 'payment_required');
+    assert.equal(settle.reason, 'invalid_exact_evm_transaction_failed');
+    assert.match(settle.message, /didn't go through just then, so nothing was charged\. Ask again\./);
+    assert.doesNotMatch(settle.message, /too low/);
+    const short = await api.assist({ question: 'short', context: {} });
+    assert.match(short.message, /balance is too low/);
+    const unpaid = await api.assist({ question: 'unpaid', context: {} });
+    assert.doesNotMatch(unpaid.message, /too low/, 'no payment attached is not a low balance either');
+  } finally {
+    srv.closeAllConnections();
+    await new Promise((resolve) => srv.close(resolve));
+  }
+});
