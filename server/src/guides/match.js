@@ -1,4 +1,4 @@
-import { tokens } from '../text.js';
+import { stem, tokens } from '../text.js';
 
 export const THRESHOLD = 0.6;
 export const APP_BONUS = 0.15;
@@ -13,12 +13,18 @@ export function wantsExplanation(question) {
 
 const round = (n) => Math.round(n * 1000) / 1000;
 
+// "make a new issue" asks for "create an issue".
+const SAME = new Map(['make', 'add'].map((w) => [stem(w), stem('create')]));
+const same = (list) => list.map((t) => SAME.get(t) || t);
+export const words = (text) => same(tokens(text));
+
 // 1 if the whole normalised trigger appears in the question, else the share of its tokens.
 export function triggerScore(questionTokens, trigger) {
-  const t = tokens(trigger);
+  const t = words(trigger);
   if (!t.length) return 0;
-  if (` ${questionTokens.join(' ')} `.includes(` ${t.join(' ')} `)) return 1;
-  const have = new Set(questionTokens);
+  const q = same(questionTokens);
+  if (` ${q.join(' ')} `.includes(` ${t.join(' ')} `)) return 1;
+  const have = new Set(q);
   return t.filter((x) => have.has(x)).length / t.length;
 }
 
@@ -29,10 +35,15 @@ export function appMatches(guide, context = {}) {
 }
 
 export function scoreGuide(question, guide, context = {}) {
-  const q = tokens(question);
+  const q = words(question);
+  // A partial match needs two of the question's words among the guide's trigger words. One
+  // shared word isn't enough: "filter issues" or "create a checklist" isn't "log an issue".
+  const vocab = new Set((guide.triggers || []).flatMap((t) => words(t)));
+  const shared = new Set(q.filter((w) => vocab.has(w))).size;
   let best = { base: 0, trigger: null };
   for (const trigger of guide.triggers || []) {
-    const base = triggerScore(q, trigger);
+    const share = triggerScore(q, trigger);
+    const base = share === 1 || shared >= 2 ? share : 0;
     if (base > best.base) best = { base, trigger };
   }
   const appMatch = appMatches(guide, context);

@@ -33,16 +33,31 @@ test('a trigger found inside the question scores 1', () => {
 });
 
 test('a partial trigger scores the share of its tokens', () => {
-  assert.equal(triggerScore(tokens('make a new issue'), 'create an issue'), 0.5);
+  assert.equal(triggerScore(tokens('close an issue'), 'create an issue'), 0.5);
   assert.equal(triggerScore(tokens('nothing related'), 'create an issue'), 0);
 });
 
+test('"make" and "add" ask for "create"', () => {
+  assert.equal(matchGuide('how do I make a new issue', [forma], {}).score, 1);
+  assert.equal(matchGuide('add an issue', [forma], {}).score, 1);
+});
+
 test('the app bonus lifts a partial match over the 0.6 threshold', () => {
-  assert.equal(matchGuide('how do I make a new issue', [forma], {}), null);
-  const hit = matchGuide('how do I make a new issue', [forma], { app: 'Google Chrome', title: 'Forma Build - Issues' });
+  // "report" and "issue" come from different triggers: two shared words, half of "report a defect".
+  assert.equal(matchGuide('how do I report an issue', [forma], {}), null);
+  const hit = matchGuide('how do I report an issue', [forma], { app: 'Google Chrome', title: 'Forma Build - Issues' });
   assert.equal(hit.guide.id, 'forma-log-issue');
   assert.equal(hit.score, 0.65);
   assert.equal(hit.appMatch, true);
+});
+
+test('one shared word is not a match, even in the right app', () => {
+  const inForma = { app: 'Google Chrome', title: 'Forma Build - Issues' };
+  for (const q of ['how do I filter issues by assignee', 'how do I close an issue', 'how do I create a checklist']) {
+    assert.equal(matchGuide(q, [forma], inForma), null, q);
+  }
+  // ... and it doesn't make the guide context for another app's question either.
+  assert.deepEqual(relatedGuides('How do I create a new sheet in Revit?', [forma], { app: 'Revit' }), []);
 });
 
 test('apps also match on the URL', () => {
@@ -72,6 +87,8 @@ test('ties go to the most recently recorded guide', () => {
 test('related guides are app matches or partial matches (score >= 0.34)', () => {
   const deck = { id: 'deck', triggers: ['present the pitch'], apps: ['Keynote'] };
   const other = { id: 'other', triggers: ['approve a timesheet'], apps: ['Excel'] };
-  const ids = relatedGuides('why do issues need photos', [forma, deck, other], { app: 'Keynote' }).map((r) => r.guide.id);
+  const ids = relatedGuides('why do we report defects', [forma, deck, other], { app: 'Keynote' }).map((r) => r.guide.id);
   assert.deepEqual(ids.sort(), ['deck', 'forma-log-issue']);
+  const oneWord = relatedGuides('why do issues need photos', [forma, deck, other], { app: 'Keynote' }).map((r) => r.guide.id);
+  assert.deepEqual(oneWord, ['deck']);
 });
