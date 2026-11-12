@@ -228,6 +228,40 @@ try {
     await page.keyboard.press('Escape');
   });
 
+  await check('GOAT-compatible: a drafted guide gets its positions from the recorder and plays when asked', async () => {
+    const drafted = {
+      title: 'Open a markup in Bluebeam',
+      triggers: ['open a markup', 'find a markup'],
+      intro: 'Two clicks. Follow the blue cursor.',
+      steps: [
+        { label: 'Markups', say: 'Open the Markups list.' },
+        { label: 'Filter', say: 'Filter by your name.' },
+      ],
+    };
+    ollama.state.reply = (body) => (body.format ? JSON.stringify(drafted) : 'Photos are the evidence for every issue.');
+    await app.evaluate(() => globalThis.__goatTest.openDraft());
+    await page.waitForSelector('.draft-text', { state: 'visible' });
+    await page.fill('.draft-text', 'Bluebeam: open the Markups list, then filter by your name.');
+    await page.click('[data-action="draft"]');
+    await page.waitForSelector('[data-action="record"]:not([hidden])');
+    await page.click('[data-action="record"]');
+    await until(() => app.evaluate(() => globalThis.__goatTest.recording().recording), 'the recording to start');
+    await app.evaluate(() => globalThis.__goatTest.captureStep({ x: 300, y: 200 }));
+    await app.evaluate(() => globalThis.__goatTest.captureStep({ x: 500, y: 260 }));
+    await app.evaluate(() => globalThis.__goatTest.toggleRecording());
+    await page.waitForSelector('.rec-form', { state: 'visible' });
+    assert.equal(await page.inputValue('[name="title"]'), 'Open a markup in Bluebeam');
+    await page.click('.rec-form button[type="submit"]');
+    await until(() => page.evaluate(() => /Saved "Open a markup in Bluebeam"/.test(document.getElementById('goat-toasts').innerText)), 'the saved toast');
+    await askThroughMain('how do I find a markup?');
+    await until(
+      () => page.evaluate(() => window.GOATUI.state().guide?.id === 'open-a-markup-in-bluebeam' && window.GOATUI.state().guide.landed),
+      'the drafted guide to play',
+    );
+    assert.match(await page.locator('#goat-bubble').innerText(), /Open the Markups list\./);
+    await page.keyboard.press('Escape');
+  });
+
   await check('no page errors', async () => {
     assert.deepEqual(pageErrors, []);
   });

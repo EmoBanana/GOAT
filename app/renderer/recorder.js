@@ -12,8 +12,9 @@
   const markers = ui.el('div', 'rec-markers');
   document.body.append(markers, hud);
 
-  let session = null; // { app, steps: [{ x, y }] } while recording
+  let session = null; // { app, steps: [{ x, y }], plan } while recording
   let draft = null; // save-form values once recording stops
+  let plan = null; // a GOAT-compatible draft waiting for its positions
   let escArmed = false;
 
   function renderHud() {
@@ -23,8 +24,16 @@
     hud.append(head);
     if (session.steps.length) {
       const list = ui.el('ol', 'rec-list');
-      for (const s of session.steps) list.append(ui.el('li', null, `(${s.x}, ${s.y})`));
+      session.steps.forEach((s, i) => {
+        const label = session.plan && session.plan.steps[i] ? `${session.plan.steps[i].label} ` : '';
+        list.append(ui.el('li', null, `${label}(${s.x}, ${s.y})`));
+      });
       hud.append(list);
+    }
+    if (session.plan) {
+      // Drafted from docs: say which button to capture next.
+      const next = session.plan.steps[session.steps.length];
+      hud.append(ui.el('div', 'rec-next', next ? `Next: ${session.steps.length + 1}. ${next.label}. ${next.say}` : 'All drafted steps captured.'));
     }
     hud.append(ui.el('div', 'rec-hint', `Hover a button and press ${ui.hotkey('capture')}. ${ui.hotkey('record')} to finish.`));
     hud.hidden = false;
@@ -43,7 +52,8 @@
     ui.stopGuide('record');
     ui.closePanel();
     ui.hideBubble();
-    session = { app: msg.app || '', steps: [] };
+    session = { app: msg.app || '', steps: [], plan };
+    plan = null;
     draft = null;
     clearMarkers();
     renderHud();
@@ -66,15 +76,99 @@
     hud.hidden = true;
     const steps = (msg.steps || (session && session.steps) || []).map((s) => ({ x: s.x, y: s.y }));
     const app = msg.app || (session && session.app) || '';
+    const drafted = (session && session.plan) || null;
     session = null;
     if (!steps.length) {
       clearMarkers();
       ui.toast('Recording stopped: no steps captured.');
       return;
     }
-    draft = { app, title: '', triggers: '', intro: '', steps: steps.map((s) => ({ ...s, label: '', say: '' })) };
+    // A GOAT-compatible draft fills the form; the recording supplied the positions.
+    draft = {
+      app,
+      title: drafted ? drafted.title : '',
+      triggers: drafted ? drafted.triggers.join(', ') : '',
+      intro: drafted ? drafted.intro : '',
+      steps: steps.map((s, i) => {
+        const d = drafted && drafted.steps[i];
+        return { ...s, label: d ? d.label : '', say: d ? d.say : '' };
+      }),
+    };
     openForm();
   });
+
+  // GOAT-compatible: paste vendor docs, Gemma drafts the steps, then "Record positions".
+  const DRAFT_HTML =
+    '<div class="draft">' +
+    '<div class="form-head"><strong>Draft a guide from docs</strong><span class="form-sub">GOAT-compatible</span></div>' +
+    '<textarea class="draft-text" spellcheck="false" placeholder="Paste the vendor\'s instructions for one procedure."></textarea>' +
+    '<div class="draft-result" hidden></div>' +
+    '<div class="form-error" role="alert" hidden></div>' +
+    '<div class="form-actions"><button type="button" data-action="cancel">Cancel</button><span class="spacer"></span>' +
+    '<button type="button" data-action="draft">Draft steps</button><button type="button" class="primary" data-action="record" hidden>Record positions</button></div>' +
+    '</div>';
+
+  function renderDraft(p, d) {
+    const box = p.querySelector('.draft-result');
+    box.replaceChildren();
+    box.append(ui.el('div', 'draft-title', d.title || 'Untitled guide'));
+    if (d.triggers.length) box.append(ui.el('div', 'form-sub', `Triggers: ${d.triggers.join(', ')}`));
+    const list = ui.el('ol', 'draft-steps');
+    for (const s of d.steps) {
+      const li = ui.el('li');
+      li.append(ui.el('strong', null, s.label), ui.el('span', null, ` ${s.say}`));
+      list.append(li);
+    }
+    box.append(list);
+    box.hidden = false;
+  }
+
+  function openDraft() {
+    let drafted = null;
+    const p = ui.openPanel({
+      name: 'draft',
+      html: DRAFT_HTML,
+      focus: '.draft-text',
+      backdropCloses: false,
+      onclick: async (event) => {
+        const button = event.target.closest('[data-action]');
+        if (!button) return;
+        const action = button.dataset.action;
+        if (action === 'cancel') return ui.closePanel();
+        if (action === 'record' && drafted) {
+          plan = drafted;
+          ui.closePanel();
+          if (goat.startRecording) goat.startRecording();
+          return undefined;
+        }
+        if (action === 'draft') {
+          const text = p.querySelector('.draft-text').value.trim();
+          const error = p.querySelector('.form-error');
+          if (!text) {
+            error.textContent = 'Paste the instructions first.';
+            error.hidden = false;
+            return undefined;
+          }
+          error.hidden = true;
+          button.disabled = true;
+          button.textContent = 'Drafting…';
+          const r = goat.draftGuide ? await goat.draftGuide(text) : { error: 'unavailable', message: 'Drafting is not available.' };
+          button.disabled = false;
+          button.textContent = 'Draft again';
+          if (!r || r.error) {
+            error.textContent = (r && r.message) || 'Drafting failed.';
+            error.hidden = false;
+            return undefined;
+          }
+          drafted = r.draft;
+          renderDraft(p, drafted);
+          p.querySelector('[data-action="record"]').hidden = false;
+        }
+        return undefined;
+      },
+    });
+  }
+  ui.onEvent('open-draft', () => openDraft());
 
   // Static markup only (numbers); every value is set through .value, never as HTML.
   function formHtml(count) {

@@ -1,5 +1,6 @@
 import express from 'express';
 import { HttpError } from './errors.js';
+import { mountDrafts } from './guides/draft.js';
 import { guideSummary, publicGuide } from './guides/store.js';
 import { mountWallet, walletLinker } from './payments/routes.js';
 import { mountTimesheet } from './timesheet/routes.js';
@@ -52,6 +53,8 @@ export function createApp({ config, guides, docs, llm, users, assist, mcp, proje
     if (!guide) throw new HttpError(404, 'not_found', `There's no guide called "${req.params.id}".`);
     res.json(publicGuide(guide));
   });
+
+  mountDrafts(app, { config, llm });
 
   app.post('/api/guides', (req, res) => {
     const guide = guides.save(req.body);

@@ -635,6 +635,46 @@ await check('voice: free users are pointed to the Pro upgrade', async () => {
   await page.click('[data-action="close"]');
 });
 
+await check('GOAT-compatible: docs become drafted steps, the recorder adds positions, the form comes pre-filled', async () => {
+  const drafted = {
+    title: 'Export a PDF in Bluebeam',
+    triggers: ['export a pdf', 'save as pdf'],
+    intro: 'Two clicks. Follow the blue cursor.',
+    steps: [
+      { label: 'File', say: 'Open the File menu.' },
+      { label: 'Export', say: 'Choose Export, then PDF.' },
+    ],
+  };
+  await setReply('draftGuide', { draft: drafted, model: 'gemma4:e4b-it-qat' });
+  await page.evaluate(() => (window.__calls.length = 0));
+  await emit({ type: 'open-draft' });
+  await page.waitForSelector('.draft-text', { state: 'visible' });
+  await page.click('[data-action="draft"]');
+  assert.equal(await page.locator('.draft .form-error').innerText(), 'Paste the instructions first.');
+  await page.fill('.draft-text', 'To export a PDF in Bluebeam, open File, then Export, then PDF.');
+  await page.click('[data-action="draft"]');
+  await page.waitForSelector('.draft-steps', { state: 'visible' });
+  assert.match(await page.locator('.draft-result').innerText(), /File Open the File menu\./);
+  assert.deepEqual((await calls('draftGuide'))[0].args, ['To export a PDF in Bluebeam, open File, then Export, then PDF.']);
+  await shot('ui-16-draft');
+  await page.click('[data-action="record"]');
+  assert.equal((await calls('startRecording')).length, 1);
+  await emit({ type: 'record:start', app: 'Bluebeam Revu' });
+  assert.match(await page.locator('.rec-hud').innerText(), /Next: 1\. File\. Open the File menu\./);
+  await emit({ type: 'record:step', step: { n: 1, x: 120, y: 80 }, count: 1 });
+  assert.match(await page.locator('.rec-hud').innerText(), /Next: 2\. Export\. Choose Export, then PDF\./);
+  await emit({ type: 'record:step', step: { n: 2, x: 140, y: 300 }, count: 2 });
+  assert.match(await page.locator('.rec-hud').innerText(), /All drafted steps captured\./);
+  await emit({ type: 'record:stop', app: 'Bluebeam Revu', steps: [{ n: 1, x: 120, y: 80 }, { n: 2, x: 140, y: 300 }] });
+  await page.waitForSelector('.rec-form', { state: 'visible' });
+  assert.equal(await page.inputValue('[name="title"]'), 'Export a PDF in Bluebeam');
+  assert.equal(await page.inputValue('[name="triggers"]'), 'export a pdf, save as pdf');
+  assert.equal(await page.inputValue('[name="intro"]'), 'Two clicks. Follow the blue cursor.');
+  assert.equal(await page.inputValue('[name="label-0"]'), 'File');
+  assert.equal(await page.inputValue('[name="say-1"]'), 'Choose Export, then PDF.');
+  await page.click('[data-action="discard"]');
+});
+
 await check('no page errors or CSP violations', async () => {
   assert.deepEqual(pageErrors, []);
   assert.deepEqual(await page.evaluate(() => window.__csp), []);

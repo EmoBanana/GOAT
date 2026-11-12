@@ -199,6 +199,12 @@ async function toggleTracking() {
   refreshTray();
 }
 
+// GOAT-compatible: paste vendor docs, Gemma drafts the steps, the recorder adds the positions.
+function openDraft() {
+  focusOverlay();
+  send({ type: 'open-draft' });
+}
+
 function openWallet() {
   focusOverlay();
   send({ type: 'open-wallet' });
@@ -275,6 +281,10 @@ function registerIpc() {
       shell.openExternal(url);
     }
   });
+  ipcMain.handle('goat:draft-guide', (event, text) => (fromOverlay(event) && typeof text === 'string' ? api.draftGuide(text) : { error: 'forbidden' }));
+  ipcMain.on('goat:start-recording', (event) => {
+    if (fromOverlay(event) && !recorder.recording) toggleRecording();
+  });
   ipcMain.handle('goat:save-guide', async (event, form) => {
     if (!fromOverlay(event)) return { error: 'forbidden', message: 'Unknown sender.' };
     const { width, height } = screen.getPrimaryDisplay().size;
@@ -328,6 +338,7 @@ function trayMenu() {
       ? { label: `Stop recording (${hotkey('R')})`, click: () => toggleRecording() }
       : { label: `Record a guide (${hotkey('R')})`, click: () => toggleRecording() },
     ...(recorder.recording ? [{ label: `Capture step at the mouse (${hotkey('C')})`, click: () => captureStep() }] : []),
+    { label: 'Draft a guide from docs…', click: () => openDraft() },
     tracker.tracking
       ? { label: `Stop tracking (${hotkey('T')})`, click: () => toggleTracking() }
       : { label: `Start tracking (${hotkey('T')})`, click: () => toggleTracking() },
@@ -376,6 +387,7 @@ if (!app.requestSingleInstanceLock()) {
         recording: () => ({ recording: recorder.recording, steps: recorder.steps, app: recorder.app }),
         toggleTracking: () => toggleTracking(),
         toggleVoice: () => toggleVoice(),
+        openDraft: () => openDraft(),
         tracking: () => ({ tracking: tracker.tracking, queued: tracker.queued }),
         wallet: () => api.wallet(),
         payer: () => ({ kind: payer.kind, address: payer.address }),

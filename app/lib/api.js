@@ -67,6 +67,7 @@ export function createApi({ baseUrl, userId, walletAddress = null, fetchImpl = g
     health: () => request('GET', '/api/health', undefined, 3000),
     me: () => request('GET', '/api/me', undefined, 5000),
     saveGuide: (guide) => request('POST', '/api/guides', guide, 10_000),
+    draftGuide: (text) => request('POST', '/api/guides/draft', { text }, 120_000),
     timesheetConfig: () => request('GET', '/api/timesheet/config', undefined, 5000),
     postActivity: (samples) => request('POST', '/api/activity', { samples }, 10_000),
     timesheet: (date) => request('GET', `/api/timesheet?date=${encodeURIComponent(date)}`, undefined, 10_000),

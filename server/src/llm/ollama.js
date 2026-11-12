@@ -63,9 +63,11 @@ export function createOllama({ host, keepAlive = '30m', timeoutMs = 120_000, fet
   // Non-streaming chat. think: false answers fast; true lets Gemma reason first. tools: Ollama
   // function specs (from MCP servers). Older Ollama builds reject `think`, and some models
   // reject tools: retry once without the offending field.
-  async function chat({ model, messages, temperature = 0.3, think = false, tools }) {
+  // format: a JSON schema for structured output (guide drafts).
+  async function chat({ model, messages, temperature = 0.3, think = false, tools, format }) {
     let body = { model, messages, stream: false, think, keep_alive: keepAlive, options: { temperature } };
     if (tools?.length) body.tools = tools;
+    if (format) body.format = format;
     let r = await post('/api/chat', body);
     if (r.status === 400 && /think/i.test(errorText(r))) {
       const { think: _think, ...rest } = body;

@@ -257,6 +257,25 @@ body {
 .hl-rect.locked { border-style: dashed; box-shadow: none; }
 .ask-context.scoped { color: var(--blue); font-weight: 600; }
 
+/* GOAT-compatible drafts. */
+.panel-draft { top: 12%; width: min(580px, calc(100vw - 48px)); }
+.draft-text {
+  width: 100%;
+  min-height: 140px;
+  padding: 9px 10px;
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  border-radius: 8px;
+  outline: 0;
+  color: var(--ink);
+  font: 13px/1.45 var(--font);
+  resize: vertical;
+}
+.draft-text:focus { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-soft); }
+.draft-result { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: #f8fafc; font-size: 13px; }
+.draft-title { font-weight: 700; }
+.draft-steps { margin: 8px 0 0; padding-left: 20px; line-height: 1.5; }
+.rec-next { margin-top: 8px; padding: 6px 8px; border-radius: 8px; background: rgba(239, 68, 68, 0.18); color: #fff; font-weight: 600; }
+
 /* Voice mode: a red listening pill beside the cursor. */
 .cursor .voice-pill {
   display: none;

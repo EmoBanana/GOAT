@@ -6,6 +6,8 @@ contextBridge.exposeInMainWorld('goat', {
   ask: (question, extra) => ipcRenderer.invoke('goat:ask', { ...(extra || {}), question }),
   info: () => ipcRenderer.invoke('goat:info'),
   saveGuide: (guide) => ipcRenderer.invoke('goat:save-guide', guide),
+  draftGuide: (text) => ipcRenderer.invoke('goat:draft-guide', text),
+  startRecording: () => ipcRenderer.send('goat:start-recording'),
   getTimesheet: (date) => ipcRenderer.invoke('goat:timesheet', date),
   approveTimesheet: (date) => ipcRenderer.invoke('goat:approve-timesheet', date),
   exportTimesheetCsv: (date) => ipcRenderer.invoke('goat:export-csv', date),
