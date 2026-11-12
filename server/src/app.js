@@ -3,6 +3,7 @@ import { HttpError } from './errors.js';
 import { mountDrafts } from './guides/draft.js';
 import { guideSummary, publicGuide } from './guides/store.js';
 import { mountWallet, walletLinker } from './payments/routes.js';
+import { mountSite } from './site.js';
 import { mountTimesheet } from './timesheet/routes.js';
 import { sanitizeUserId } from './users.js';
 import { mountVoice } from './voice.js';
@@ -10,6 +11,7 @@ import { mountVoice } from './voice.js';
 export function createApp({ config, guides, docs, llm, users, assist, mcp, projects, activity, payments = null, topups = null, logger = console }) {
   const app = express();
   app.disable('x-powered-by');
+  mountSite(app, { config }); // the download page and the app download, free and before x402
   app.use(express.json({ limit: '5mb' }));
   app.use((req, _res, next) => {
     req.userId = sanitizeUserId(req.get('x-goat-user'));

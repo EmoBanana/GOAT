@@ -69,5 +69,7 @@ export function loadConfig(env = process.env, root = ROOT) {
     guidesDir: path.resolve(root, str(env.GOAT_GUIDES_DIR, 'guides')),
     docsDir: path.resolve(root, str(env.GOAT_DOCS_DIR, 'docs')),
     dataDir: path.resolve(root, str(env.GOAT_DATA_DIR, 'data')),
+    siteDir: path.resolve(root, str(env.GOAT_SITE_DIR, 'site')),
+    distDir: path.resolve(root, str(env.GOAT_DIST_DIR, 'dist')),
   };
 }
