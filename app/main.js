@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sampleActiveWindow } from './lib/active-window.js';
 import { captureRegion } from './lib/capture.js';
+import { documentHint, documentKind, readDocument } from './lib/doc-context.js';
 import { startHoldKeys } from './lib/hold-keys.js';
 import { validRegion } from './lib/region.js';
 import { createApi } from './lib/api.js';
@@ -279,6 +280,55 @@ function captureStep(point) {
   if (step) send({ type: 'record:step', step, count: recorder.steps.length });
 }
 
+// ---------- what GOAT reads when you ask ----------
+// The whole deck or page in front (lib/doc-context.js), read now for this one question and never
+// stored. GOAT_DOC_CONTEXT=off switches it off. A one-time hint says how to allow it.
+const docHints = new Set();
+async function readFrontDocument() {
+  const kind = documentKind(askContext.app);
+  if (!kind || process.env.GOAT_DOC_CONTEXT === 'off') return null;
+  send({ type: 'progress', step: kind === 'deck' ? 'Reading the deck' : 'Reading the page' });
+  const doc = await readDocument({ app: askContext.app });
+  if (doc && doc.error) {
+    const hint = documentHint(doc);
+    if (hint && !docHints.has(`${doc.app}:${doc.error}`)) {
+      docHints.add(`${doc.app}:${doc.error}`);
+      send({ type: 'notice', text: hint });
+    }
+    log(`couldn't read the ${kind} in ${doc.app}: ${doc.error}`);
+    return null;
+  }
+  return doc;
+}
+
+// Polls the server for an ask's steps and passes new ones to the overlay. stop() reads once more,
+// so a quick answer still shows its steps before the reply arrives.
+function watchSteps(progressId) {
+  let shown = 0;
+  let running = null;
+  const poll = () => {
+    running ||= api
+      .progress(progressId)
+      .then((r) => {
+        const all = Array.isArray(r?.steps) ? r.steps : [];
+        for (const step of all.slice(shown)) send({ type: 'progress', step });
+        shown = Math.max(shown, all.length);
+      })
+      .finally(() => {
+        running = null;
+      });
+    return running;
+  };
+  const timer = setInterval(poll, 300);
+  return {
+    stop: async () => {
+      clearInterval(timer);
+      await running;
+      await poll();
+    },
+  };
+}
+
 // ---------- account ----------
 // GOAT starts by asking you to sign in: create an account (email or social) or connect a wallet
 // with Reown AppKit in the browser, or continue offline. The account decides the user id the
@@ -425,6 +475,7 @@ function registerIpc() {
     const region = validRegion(payload?.region);
     let image;
     if (region) {
+      send({ type: 'progress', step: 'Looking at the highlighted area' });
       try {
         image = await captureRegion(region, { win, fake: process.env.GOAT_FAKE_CAPTURE === '1' });
       } catch (err) {
@@ -438,7 +489,16 @@ function registerIpc() {
       voiceScreen = null;
     }
     const context = region ? { ...askContext, region } : screenShot ? { ...askContext, region: screenShot.region } : askContext;
-    const reply = await api.assist({ question, context, image, screen: screenShot?.image, voice: payload?.voice === true, chatId: chatIdFrom(payload?.chatId) });
+    const document = await readFrontDocument();
+    // The server's steps ("Checking the guides"…) go to the readout while the answer comes.
+    const progressId = globalThis.crypto.randomUUID();
+    const steps = watchSteps(progressId);
+    let reply;
+    try {
+      reply = await api.assist({ question, context, image, screen: screenShot?.image, voice: payload?.voice === true, chatId: chatIdFrom(payload?.chatId), document, progressId });
+    } finally {
+      await steps.stop();
+    }
     log(reply.error ? `ask failed: ${reply.error}` : `ask -> ${reply.source}${reply.guide ? ` (${reply.guide.id})` : ''} in ${reply.latencyMs} ms`);
     if (!reply.error) reply.where = whereItRuns(serverUrl); // "running on this laptop" only when it does
     return reply;
@@ -546,6 +606,9 @@ if (!app.requestSingleInstanceLock()) {
         wallet: () => api.wallet(),
         payer: () => ({ kind: payer.kind, address: payer.address }),
         account: () => accountInfo(),
+        setFakeDoc: (value) => {
+          process.env.GOAT_FAKE_DOC = value;
+        },
         openAccount: () => openAccount(),
         startSignIn: (mode) => startSignIn(mode),
         continueOffline: () => continueOffline(),

@@ -10,7 +10,7 @@ import { createOllama, hasModel } from '../server/src/llm/ollama.js';
 const envFile = path.join(ROOT, '.env');
 if (fs.existsSync(envFile)) process.loadEnvFile(envFile);
 const config = loadConfig();
-const llm = createOllama({ host: config.ollamaHost, keepAlive: config.keepAlive, timeoutMs: 180_000 });
+const llm = createOllama({ host: config.ollamaHost, keepAlive: config.keepAlive, timeoutMs: 180_000, numCtx: config.numCtx });
 
 let failures = 0;
 function report(ok, name, detail = '') {

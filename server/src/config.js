@@ -66,6 +66,7 @@ export function loadConfig(env = process.env, root = ROOT) {
     rpcUrl: str(env.BASE_SEPOLIA_RPC, 'https://sepolia.base.org'),
     cdp: { apiKeyId: str(env.CDP_API_KEY_ID, ''), apiKeySecret: str(env.CDP_API_KEY_SECRET, ''), walletSecret: str(env.CDP_WALLET_SECRET, '') },
     reownProjectId: str(env.REOWN_PROJECT_ID, ''), // sign-in with Reown AppKit (dashboard.reown.com)
+    numCtx: num(env.GOAT_NUM_CTX, 8192), // the model's context window: a whole deck or page fits
     projectsFile: path.resolve(root, str(env.GOAT_PROJECTS_FILE, 'config/projects.json')),
     guidesDir: path.resolve(root, str(env.GOAT_GUIDES_DIR, 'guides')),
     docsDir: path.resolve(root, str(env.GOAT_DOCS_DIR, 'docs')),

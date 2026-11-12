@@ -342,6 +342,26 @@ try {
     await page.keyboard.press('Escape');
   });
 
+  await check('asking in a browser reads the whole page for context, and the readout shows each step', async () => {
+    await page.evaluate(() => {
+      window.__steps = [];
+      window.GOATUI.onEvent('step', (s) => window.__steps.push(s.text));
+    });
+    const doc = { kind: 'page', title: 'Issues - Autodesk Build', url: 'https://acc.autodesk.com/build/issues?projectId=1', text: 'Issue 42: Crack in pier P3, assigned to Pat, due Friday.' };
+    await app.evaluate((_electron, value) => globalThis.__goatTest.setFakeDoc(value), JSON.stringify(doc));
+    ollama.calls.length = 0;
+    await askThroughMain('who is issue 42 assigned to?');
+    await until(() => ollama.chats().length >= 1, 'the question to reach Gemma');
+    const msg = ollama.chats()[0].body.messages.at(-1).content;
+    assert.match(msg, /^The page open in Google Chrome, "Issues - Autodesk Build" \(https:\/\/acc\.autodesk\.com\/build\/issues\):\nIssue 42: Crack in pier P3/);
+    await until(() => page.evaluate(() => window.__steps.includes('Writing the answer')), 'the steps');
+    const steps = await page.evaluate(() => window.__steps);
+    assert.ok(steps.indexOf('Reading the page') >= 0 && steps.indexOf('Reading the page') < steps.indexOf('Writing the answer'), steps.join(' > '));
+    assert.ok(steps.includes('Checking company procedures'), steps.join(' > '));
+    await app.evaluate(() => globalThis.__goatTest.setFakeDoc(''));
+    await until(() => page.evaluate(() => !document.getElementById('goat-bubble').hidden), 'the answer');
+  });
+
   await check('signing in through the browser page brings the account to the app; signing out asks again', async () => {
     const started = await app.evaluate(() => globalThis.__goatTest.startSignIn('create'));
     assert.equal(started.url, `${srv.url}/account/?code=${started.code}&mode=create`);

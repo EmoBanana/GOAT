@@ -17,7 +17,7 @@ export async function buildServer(config, overrides = {}) {
   const guides = overrides.guides ?? createGuideStore({ dir: config.guidesDir, logger });
   const docs = overrides.docs ?? createDocs({ dir: config.docsDir });
   const llm =
-    overrides.llm ?? createOllama({ host: config.ollamaHost, keepAlive: config.keepAlive, timeoutMs: config.llmTimeoutMs });
+    overrides.llm ?? createOllama({ host: config.ollamaHost, keepAlive: config.keepAlive, timeoutMs: config.llmTimeoutMs, numCtx: config.numCtx });
   const users = overrides.users ?? createUsers({ dataDir: config.dataDir, logger });
   const mcp = overrides.mcp ?? createMcpHub({ file: config.mcpConfig, env: process.env, logger });
   const chats = overrides.chats ?? createChats({ dataDir: config.dataDir });

@@ -5,6 +5,7 @@ import { HttpError } from './errors.js';
 import { mountDrafts } from './guides/draft.js';
 import { guideSummary, publicGuide } from './guides/store.js';
 import { mountWallet, walletLinker } from './payments/routes.js';
+import { createProgress, mountProgress, progressId } from './progress.js';
 import { mountSite } from './site.js';
 import { mountTimesheet } from './timesheet/routes.js';
 import { sanitizeUserId } from './users.js';
@@ -12,6 +13,7 @@ import { mountVoice } from './voice.js';
 
 export function createApp({ config, guides, docs, llm, users, assist, mcp, projects, activity, payments = null, topups = null, chats = null, logger = console }) {
   const app = express();
+  const progress = createProgress();
   app.disable('x-powered-by');
   mountSite(app, { config }); // the download page and the app download, free and before x402
   app.use(express.json({ limit: '5mb' }));
@@ -67,10 +69,17 @@ export function createApp({ config, guides, docs, llm, users, assist, mcp, proje
   });
 
   app.post('/api/assist', async (req, res) => {
-    const { question, context, image, screen, voice, chatId } = req.body || {};
+    const { question, context, image, screen, voice, chatId, document } = req.body || {};
     // chatId: continue that chat; null starts a new one; absent continues a fresh one.
     const chat = typeof chatId === 'string' || chatId === null ? chatId : undefined;
-    res.json(await assist({ question, context, image, screen, voice: voice === true, tier: users.tier(req.userId), userId: req.userId, chatId: chat }));
+    // Steps for the overlay's readout while this ask runs.
+    const run = progressId(req.get('x-goat-progress'));
+    const onStep = run ? (text) => progress.step(run, text) : undefined;
+    try {
+      res.json(await assist({ question, context, image, screen, document, voice: voice === true, tier: users.tier(req.userId), userId: req.userId, chatId: chat, onStep }));
+    } finally {
+      if (run) progress.done(run);
+    }
   });
 
   if (projects && activity) mountTimesheet(app, { projects, activity });
@@ -78,6 +87,7 @@ export function createApp({ config, guides, docs, llm, users, assist, mcp, proje
   mountVoice(app, { config, users, llm, projects });
   if (chats) mountChats(app, { chats });
   mountAccount(app, { config });
+  mountProgress(app, { progress });
 
   app.use('/api', (req) => {
     throw new HttpError(404, 'not_found', `No route for ${req.method} ${req.originalUrl}.`);

@@ -20,7 +20,9 @@ function errorText(r) {
   return (r.text || '').slice(0, 300) || `HTTP ${r.status}`;
 }
 
-export function createOllama({ host, keepAlive = '30m', timeoutMs = 120_000, fetchImpl = globalThis.fetch }) {
+// numCtx: the context window, the same on every call (a different size makes Ollama reload the
+// model). 8192 fits a whole deck or page next to the procedures; Ollama's default is 4096.
+export function createOllama({ host, keepAlive = '30m', timeoutMs = 120_000, numCtx = 8192, fetchImpl = globalThis.fetch }) {
   function unavailable(err, timedOut, timeout = timeoutMs) {
     const e = new HttpError(
       503,
@@ -146,7 +148,7 @@ export function createOllama({ host, keepAlive = '30m', timeoutMs = 120_000, fet
   // servers). Older Ollama builds reject `think`, and some models reject tools: retry once
   // without the offending field. format: a JSON schema for structured output (guide drafts).
   async function chat({ model, messages, temperature = 0.3, think = false, tools, format, thinkBudgetMs = 0 }) {
-    let body = { model, messages, stream: false, think, keep_alive: keepAlive, options: { temperature } };
+    let body = { model, messages, stream: false, think, keep_alive: keepAlive, options: { temperature, num_ctx: numCtx } };
     if (tools?.length) body.tools = tools;
     if (format) body.format = format;
     let r;
@@ -178,7 +180,7 @@ export function createOllama({ host, keepAlive = '30m', timeoutMs = 120_000, fet
 
   // Loads the model into memory without generating anything.
   async function warm(model) {
-    const r = await post('/api/chat', { model, messages: [], keep_alive: keepAlive });
+    const r = await post('/api/chat', { model, messages: [], keep_alive: keepAlive, options: { num_ctx: numCtx } });
     if (!r.ok) fail(r, model);
   }
 

@@ -5,7 +5,7 @@ import { decodePaymentResponseHeader } from '@x402/fetch';
 // fetchImpl is the x402 paying fetch; walletAddress (never a key) links the wallet to the user.
 // unreachableHint follows "Can't reach the GOAT server": a packaged app has no npm start.
 export function createApi({ baseUrl, userId, walletAddress = null, fetchImpl = globalThis.fetch, timeoutMs = 130_000, unreachableHint = 'Start it with: npm start' }) {
-  async function request(method, path, body, timeout = timeoutMs) {
+  async function request(method, path, body, timeout = timeoutMs, headers = {}) {
     let res;
     try {
       res = await fetchImpl(new URL(path, baseUrl), {
@@ -14,6 +14,7 @@ export function createApi({ baseUrl, userId, walletAddress = null, fetchImpl = g
           accept: 'application/json',
           'x-goat-user': userId,
           ...(walletAddress ? { 'x-goat-wallet': walletAddress } : {}),
+          ...headers,
           ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
         },
         body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -64,7 +65,8 @@ export function createApi({ baseUrl, userId, walletAddress = null, fetchImpl = g
     baseUrl,
     userId,
     request,
-    assist: ({ question, context, image, screen, voice, chatId }) =>
+    // progressId names the ask so its live steps can be read from /api/progress/:id meanwhile.
+    assist: ({ question, context, image, screen, voice, chatId, document, progressId }) =>
       request('POST', '/api/assist', {
         question,
         context,
@@ -72,7 +74,9 @@ export function createApi({ baseUrl, userId, walletAddress = null, fetchImpl = g
         ...(screen ? { screen } : {}),
         ...(voice ? { voice: true } : {}),
         ...(typeof chatId === 'string' || chatId === null ? { chatId } : {}),
-      }),
+        ...(document ? { document } : {}),
+      }, timeoutMs, progressId ? { 'x-goat-progress': progressId } : {}),
+    progress: (id) => request('GET', `/api/progress/${encodeURIComponent(id)}`, undefined, 2000),
     health: () => request('GET', '/api/health', undefined, 3000),
     me: () => request('GET', '/api/me', undefined, 5000),
     saveGuide: (guide) => request('POST', '/api/guides', guide, 10_000),

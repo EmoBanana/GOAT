@@ -107,13 +107,34 @@ export function buildContext({ question, context, docs, guides }) {
   return { text: parts.join('\n\n'), sources, relevant };
 }
 
-function userMessage(question, ctx, contextText, { hideWindow = false } = {}) {
+// The whole deck or page in front when the user asked (read by the app, never stored).
+export const DOC_MAX = 9000;
+export function cleanDocument(doc) {
+  if (!doc || typeof doc !== 'object') return null;
+  const s = (v, max) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
+  const text = s(doc.text, DOC_MAX * 2).replace(/\n{3,}/g, '\n\n').slice(0, DOC_MAX);
+  if (!text) return null;
+  const count = (v) => (Number.isInteger(v) && v > 0 && v < 10_000 ? v : null);
+  return { kind: doc.kind === 'deck' ? 'deck' : 'page', app: s(doc.app, 60), title: s(doc.title, 200), url: stripQuery(s(doc.url, 500)), slides: count(doc.slides), current: count(doc.current), text };
+}
+
+function documentSection(doc) {
+  if (!doc) return '';
+  const where =
+    doc.kind === 'deck'
+      ? `The deck open in ${doc.app || 'Keynote'}${doc.title ? `, "${doc.title}"` : ''}${doc.slides ? ` (${doc.slides} slides${doc.current ? `, slide ${doc.current} on screen` : ''})` : ''}`
+      : `The page open in ${doc.app || 'the browser'}${doc.title ? `, "${doc.title}"` : ''}${doc.url ? ` (${doc.url})` : ''}`;
+  return `${where}:\n${doc.text}`;
+}
+
+function userMessage(question, ctx, contextText, { hideWindow = false, doc = null } = {}) {
   // With web tools in play, window titles and URLs stay out of the prompt so they can't
   // end up in a search query.
   const open = [ctx.app && `App: ${ctx.app}`, !hideWindow && ctx.title && `Window: ${ctx.title}`, !hideWindow && ctx.url && `URL: ${ctx.url}`]
     .filter(Boolean)
     .join('\n');
   return [
+    documentSection(doc),
     contextText && `Context from company procedures and guides:\n${contextText}`,
     open && `What the user has open:\n${open}`,
     `Question: ${question}`,
@@ -132,6 +153,8 @@ function toolArgs(call) {
   }
 }
 
+export const DOC_PROMPT = "The user's open deck or page is included: answer questions about it from it, and name the slide or section you mean.";
+
 // Spoken questions get spoken answers: short, plain, easy to follow by ear.
 export const VOICE_PROMPT = [
   'This question was spoken aloud and your answer will be read out.',
@@ -148,9 +171,10 @@ const SCREEN_NOTE = (region) =>
 // image: a highlighted region (always goes to Gemma). screen: the area around the pointer sent
 // with a voice question (context only; guides still win). chats: every ask joins a chat (chatId,
 // a new one for null), and the chat's last few turns go with the question, so follow-ups
-// ("and then?") make sense.
+// ("and then?") make sense. document: the whole deck or page in front (answered from directly,
+// no web tools). onStep: live steps for the overlay's readout.
 export function createAssist({ config, guides, docs, llm, mcp = null, chats = null }) {
-  return async function assist({ question, context, tier = 'free', image, screen, voice = false, userId = 'anonymous', chatId }) {
+  return async function assist({ question, context, tier = 'free', image, screen, document, voice = false, userId = 'anonymous', chatId, onStep }) {
     const started = Date.now();
     const q = typeof question === 'string' ? question.trim() : '';
     if (!q) throw new HttpError(400, 'empty_question', 'Ask me something first.');
@@ -158,6 +182,16 @@ export function createAssist({ config, guides, docs, llm, mcp = null, chats = nu
     const ctx = cleanContext(context);
     const picture = image === undefined || image === null || image === '' ? null : checkImage(image);
     const view = picture || screen === undefined || screen === null || screen === '' ? null : checkImage(screen);
+    const doc = cleanDocument(document);
+    const step = (text) => {
+      try {
+        onStep?.(text);
+      } catch {
+        // the readout is a nicety; the answer matters
+      }
+    };
+    if (picture) step('Looking at the highlighted area');
+    else if (view) step('Looking at your screen');
     const base = { id: crypto.randomUUID(), tier };
     const thread = chats ? chats.resolve(userId, chatId) : null;
     const save = (turn) => {
@@ -167,9 +201,11 @@ export function createAssist({ config, guides, docs, llm, mcp = null, chats = nu
 
     // A highlighted region always goes to the model: it's a question about what's on screen.
     if (!picture && !wantsExplanation(q)) {
+      step('Checking the guides');
       const hit = matchGuide(q, guides.list(), ctx);
       if (hit) {
         const g = hit.guide;
+        step(`Found the guide “${g.title}”`);
         return {
           ...base,
           ...save({ answer: g.intro, source: 'guide', guide: { id: g.id, title: g.title } }),
@@ -184,16 +220,20 @@ export function createAssist({ config, guides, docs, llm, mcp = null, chats = nu
       }
     }
 
-    const smallTalk = !picture && isSmallTalk(q);
+    const smallTalk = !picture && !doc && isSmallTalk(q);
+    if (!smallTalk) step('Checking company procedures');
     const found = smallTalk ? { text: '', sources: [], relevant: true } : buildContext({ question: q, context: ctx, docs, guides });
+    const usedDoc = found.sources.find((s) => s.type === 'doc');
+    // "Sample SOP: logging site issues › Photos" shows as the section: "Using “Photos”".
+    if (usedDoc) step(`Using “${String(usedDoc.heading).split('›').pop().trim().slice(0, 40) || usedDoc.file}”`);
     const mode = config.think || 'auto';
-    // Region asks stay quick unless thinking is always on.
-    const deep = picture ? mode === 'always' : !smallTalk && (mode === 'always' || (mode === 'auto' && !found.relevant));
-    // Screen contents never go anywhere near web tools.
-    const tools = deep && !picture && !view && mcp ? await mcp.tools() : [];
+    // Region and document asks stay quick unless thinking is always on.
+    const deep = picture || doc ? mode === 'always' : !smallTalk && (mode === 'always' || (mode === 'auto' && !found.relevant));
+    // Screen and document contents never go anywhere near web tools.
+    const tools = deep && !picture && !view && !doc && mcp ? await mcp.tools() : [];
 
-    const system = [SYSTEM_PROMPT, voice && VOICE_PROMPT, deep && DEEP_PROMPT, tools.length && TOOLS_PROMPT].filter(Boolean).join(' ');
-    const userText = smallTalk ? q : userMessage(q, ctx, found.text, { hideWindow: tools.length > 0 });
+    const system = [SYSTEM_PROMPT, doc && DOC_PROMPT, voice && VOICE_PROMPT, deep && DEEP_PROMPT, tools.length && TOOLS_PROMPT].filter(Boolean).join(' ');
+    const userText = smallTalk ? q : userMessage(q, ctx, found.text, { hideWindow: tools.length > 0, doc });
     const current = picture
       ? { role: 'user', content: `The user highlighted this part of the screen${regionNote(context?.region)}. The image shows it.\n\n${userText}`, images: [picture] }
       : view
@@ -229,6 +269,7 @@ export function createAssist({ config, guides, docs, llm, mcp = null, chats = nu
     const searched = [];
     for (let round = 0; ; ) {
       const offerTools = tools.length > 0 && round < MAX_TOOL_ROUNDS;
+      step(thinking ? 'Thinking it through' : 'Writing the answer');
       const r = await chat({ think: thinking, tools: offerTools ? tools : undefined, thinkBudgetMs: thinking ? config.thinkBudgetMs : 0 });
       thought ||= Boolean(r.thinking);
       if (r.cut) {
@@ -244,6 +285,7 @@ export function createAssist({ config, guides, docs, llm, mcp = null, chats = nu
         for (const call of r.toolCalls.slice(0, 2)) {
           const name = call.function?.name;
           const args = toolArgs(call);
+          step(typeof args.query === 'string' && args.query ? `Searching the web for “${args.query.slice(0, 40)}”` : 'Searching the web');
           const result = await mcp.call(name, args);
           searched.push({ tool: name, query: typeof args.query === 'string' ? args.query : '', urls: result.urls });
           messages.push({ role: 'tool', tool_name: name, content: result.text });
@@ -272,6 +314,7 @@ export function createAssist({ config, guides, docs, llm, mcp = null, chats = nu
       thought,
       image: Boolean(picture),
       screen: Boolean(view),
+      document: doc ? doc.kind : null,
       searched: searched.map(({ tool, query }) => ({ tool, query })),
       sources: [...found.sources, ...web],
       latencyMs: Date.now() - started,
