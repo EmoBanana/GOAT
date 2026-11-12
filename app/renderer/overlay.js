@@ -10,6 +10,14 @@
   const DWELL_MS = 450;
   const DWELL_RADIUS = 28;
   const DEFAULT_WAIT_MS = 9000;
+  // A step that asks for a click waits for it: Next stays off, hovering and waiting don't count.
+  // A click verb leads a sentence ("Click Filters.", "Then open Issues"); "…or click Search"
+  // after typing is not one. step.click (true or false) says so outright.
+  const CLICK_STEP = /(?:^|[.!?]\s+|\b(?:then|and|now|first|next|please)\s+)(?:click|double-click|right-click|tap|select|choose|pick|open|hit|toggle|tick)\b/i;
+  const CLICK_SLOP = 10; // points around the control that still count
+  const CLICK_RADIUS = 36; // around a recorded point, when there's no control to measure
+  const CLICK_SETTLE_MS = 450; // the app gets a moment to react before the next step looks for its control
+  const isClickStep = (step) => (typeof step?.click === 'boolean' ? step.click : CLICK_STEP.test(String(step?.say || '')));
   const HOTKEY_KEYS = { ask: 'G', record: 'R', capture: 'C', track: 'T', voice: 'V', account: 'A' };
   const CHAT_FRESH_MS = 30 * 60_000; // after this long, the ask panel starts a new chat
   const THREAD_TURNS = 3; // turns of the current chat shown above the input
@@ -237,11 +245,15 @@
     if (opts.sources) b.append(el('div', 'sources', opts.sources));
     if (opts.step || opts.next) {
       const row = el('div', 'row');
-      row.append(el('span', 'step', opts.step ? `Step ${opts.step} of ${opts.total}` : ''));
+      row.append(el('span', 'step', opts.step ? `Step ${opts.step} of ${opts.total}${opts.nextDisabled ? ' · click it to go on' : ''}` : ''));
       if (opts.next) {
         const next = el('button', 'next', opts.nextLabel || 'Next');
         next.type = 'button';
         next.dataset.action = 'next';
+        if (opts.nextDisabled) {
+          next.disabled = true;
+          next.title = 'Click it on screen to go on';
+        }
         row.append(next);
       }
       b.append(row);
@@ -275,10 +287,10 @@
   // ---------- guides ----------
   let run = null;
 
-  function waitForAdvance(me, step) {
+  function waitForAdvance(me, step, click = false) {
     return new Promise((resolve) => {
-      const waitMs = Number(step.waitMs) > 0 ? Number(step.waitMs) : DEFAULT_WAIT_MS;
-      let nearSince = null;
+      let timer = null;
+      let poll = null;
       const finish = (how) => {
         clearTimeout(timer);
         clearInterval(poll);
@@ -286,26 +298,66 @@
         me.cancel = null;
         resolve(how);
       };
-      const timer = setTimeout(() => finish('timeout'), waitMs);
-      // Hovering the target for 450 ms within 28 px counts as "done".
-      const poll = setInterval(() => {
-        const p = state.sys;
-        if (p && Math.hypot(p.x - step.x, p.y - step.y) <= DWELL_RADIUS) {
-          nearSince = nearSince ?? performance.now();
-          if (performance.now() - nearSince >= DWELL_MS) finish('dwell');
-        } else {
-          nearSince = null;
-        }
-      }, 25);
+      // A click step moves on only with the user's click on its control (onUserClick).
+      if (!click) {
+        const waitMs = Number(step.waitMs) > 0 ? Number(step.waitMs) : DEFAULT_WAIT_MS;
+        let nearSince = null;
+        timer = setTimeout(() => finish('timeout'), waitMs);
+        // Hovering the target for 450 ms within 28 px counts as "done".
+        poll = setInterval(() => {
+          const p = state.sys;
+          if (p && Math.hypot(p.x - step.x, p.y - step.y) <= DWELL_RADIUS) {
+            nearSince = nearSince ?? performance.now();
+            if (performance.now() - nearSince >= DWELL_MS) finish('dwell');
+          } else {
+            nearSince = null;
+          }
+        }, 25);
+      }
       me.advance = finish;
       me.cancel = () => finish('stopped');
     });
+  }
+
+  // Watching the user's clicks (main's click helper), from the guide's first click step to its
+  // end. False when it can't (not a Mac, GOAT_CLICK_STEPS=off): steps then move on as before.
+  async function watchClicks(me) {
+    if (me.watching === undefined) {
+      try {
+        me.watching = Boolean(goat.watchClicks && (await goat.watchClicks(true)));
+      } catch {
+        me.watching = false;
+      }
+    }
+    return me.watching;
+  }
+  // The user clicked at a screen point. On the control a click step points at (or, when it
+  // couldn't be found, anywhere but GOAT's own bubble), the guide moves on once the app has
+  // had a moment to react, so the next step finds what the click opened.
+  function onUserClick(p) {
+    const me = run;
+    const want = me && me.clickStep;
+    if (!want || !me.advance) return;
+    const x = Number(p.x);
+    const y = Number(p.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    const local = toLocal({ x, y });
+    const onGoat = document.elementFromPoint(local.x, local.y);
+    if (onGoat && onGoat.closest('.interactive')) return;
+    const r = want.rect;
+    if (r && (x < r.x - CLICK_SLOP || x > r.x + r.w + CLICK_SLOP || y < r.y - CLICK_SLOP || y > r.y + r.h + CLICK_SLOP)) return;
+    me.clickStep = null;
+    emit('guide:clicked', { id: me.id, index: me.index });
+    setTimeout(() => {
+      if (run === me && me.advance) me.advance('click');
+    }, CLICK_SETTLE_MS);
   }
 
   function endGuide(me, reason) {
     if (!me || run !== me) return;
     me.stopped = true;
     if (me.cancel) me.cancel();
+    if (me.watching && goat.watchClicks) Promise.resolve(goat.watchClicks(false)).catch(() => {});
     run = null;
     state.guide = null;
     cancelFlight();
@@ -339,10 +391,18 @@
       } catch {
         hit = null;
       }
-      if (hit && Number.isFinite(hit.x) && Number.isFinite(hit.y)) return { x: hit.x + (Number(hit.w) || 0) / 2, y: hit.y + (Number(hit.h) || 0) / 2, how: 'live', target };
+      if (hit && Number.isFinite(hit.x) && Number.isFinite(hit.y)) {
+        const w = Number(hit.w) || 0;
+        const h = Number(hit.h) || 0;
+        return { x: hit.x + w / 2, y: hit.y + h / 2, how: 'live', target, rect: { x: hit.x, y: hit.y, w, h } };
+      }
     }
-    if (hasPoint(step) && !(target && sampleOnly)) return { x: Number(step.x), y: Number(step.y), how: 'recorded', target };
-    return { x: NaN, y: NaN, how: 'none', target };
+    if (hasPoint(step) && !(target && sampleOnly)) {
+      const x = Number(step.x);
+      const y = Number(step.y);
+      return { x, y, how: 'recorded', target, rect: { x: x - CLICK_RADIUS, y: y - CLICK_RADIUS, w: CLICK_RADIUS * 2, h: CLICK_RADIUS * 2 } };
+    }
+    return { x: NaN, y: NaN, how: 'none', target, rect: null };
   }
 
   async function playGuide(guide) {
@@ -358,9 +418,13 @@
       me.index = i;
       state.guide = { id: guide.id, index: i, total: steps.length, landed: false, located: null };
       hideRing();
+      const click = isClickStep(steps[i]) && (await watchClicks(me));
+      if (me.stopped) return;
       const found = await locateStep(steps[i], sampleOnly);
       if (me.stopped) return;
       state.guide.located = found.how;
+      state.guide.click = click;
+      me.clickStep = click ? { rect: found.rect } : null;
       let s;
       if (found.how === 'none') {
         // Nothing to point at: the instruction beside the cursor, naming what to look for.
@@ -382,11 +446,15 @@
         total: steps.length,
         next: true,
         nextLabel: i === steps.length - 1 ? 'Done' : 'Next',
+        nextDisabled: click,
         at: found.how === 'none' ? { x: state.pos.x + 20, y: state.pos.y + 24 } : s,
-        onAction: (action) => (action === 'next' ? me.advance && me.advance('next') : stopGuide('closed')),
+        onAction: (action) => {
+          if (action !== 'next') stopGuide('closed');
+          else if (!me.clickStep && me.advance) me.advance('next');
+        },
       });
-      emit('guide:step', { id: guide.id, index: i, total: steps.length, label: s.label, say: s.say, intro: guide.intro, located: found.how });
-      const how = await waitForAdvance(me, s);
+      emit('guide:step', { id: guide.id, index: i, total: steps.length, label: s.label, say: s.say, intro: guide.intro, located: found.how, click });
+      const how = await waitForAdvance(me, s, click);
       if (me.stopped) return;
       emit('guide:advance', { id: guide.id, index: i, how });
     }
@@ -1121,6 +1189,7 @@
         setInsets(message.insets);
       }
       else if (message.type === 'open-ask') openAsk(message);
+      else if (message.type === 'click') onUserClick(message);
       else if (message.type === 'notice' && message.text) toast(String(message.text), { ms: 9000 });
       emit(message.type, message);
     });

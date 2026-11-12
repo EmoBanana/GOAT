@@ -10,6 +10,7 @@ import { findTarget, readTargets, targetAt } from './lib/screen-targets.js';
 import { bringUp, frontTab, HOW_TO, placeToOpen, SHOW_ME } from './lib/open-place.js';
 import { clipFor } from './lib/clips.js';
 import { startHoldKeys } from './lib/hold-keys.js';
+import { watchClicks } from './lib/clicks.js';
 import { validRegion } from './lib/region.js';
 import { createApi } from './lib/api.js';
 import { readBuildInfo, resolveServerUrl, SERVER_OFFLINE, whereItRuns } from './lib/build-info.js';
@@ -64,6 +65,26 @@ let askContext = {};
 let askPid = 0; // the app asked about, for reading its controls (macOS Accessibility)
 let askOpening = false;
 let holdKeys = null;
+// A guide step that says "Click …" waits for the user's click (lib/clicks.js): the helper runs
+// only while the overlay asks for it. GOAT_CLICK_STEPS=off goes back to Next, hover and waiting;
+// tests (GOAT_FAKE_CLICKS) click through a hook instead.
+let clickWatch = null;
+function setClickWatch(on) {
+  if (process.env.GOAT_CLICK_STEPS === 'off') return false;
+  if ('GOAT_FAKE_CLICKS' in process.env) return on;
+  if (!on) {
+    clickWatch?.stop();
+    clickWatch = null;
+    return false;
+  }
+  clickWatch ||= watchClicks({
+    onClick: () => {
+      const p = screen.getCursorScreenPoint();
+      send({ type: 'click', x: p.x, y: p.y });
+    },
+  });
+  return Boolean(clickWatch);
+}
 let streamPaused = false; // test hooks drive the cursor instead
 
 const log = (...args) => console.log('[goat]', ...args);
@@ -601,6 +622,7 @@ function registerIpc() {
     if (on) win.setIgnoreMouseEvents(true, { forward: true });
     else win.setIgnoreMouseEvents(false);
   });
+  ipcMain.handle('goat:watch-clicks', (event, on) => (fromOverlay(event) ? setClickWatch(on === true) : false));
   ipcMain.on('goat:focus', (event) => {
     if (fromOverlay(event)) focusOverlay();
   });
@@ -731,6 +753,8 @@ if (!app.requestSingleInstanceLock()) {
         askContext: () => askContext,
         windowState: () => ({ visible: win.isVisible(), onTop: win.isAlwaysOnTop(), bounds: win.getBounds(), level: windowLevel }),
         // Stop streaming the real mouse and send a fake system cursor position instead.
+        // The user's click at a screen point, as the click helper reports it.
+        click: (x, y) => send({ type: 'click', x, y }),
         sendCursor: (x, y) => {
           streamPaused = true;
           send({ type: 'cursor', x, y });
@@ -749,6 +773,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('will-quit', () => {
     globalShortcut.unregisterAll();
     holdKeys?.stop();
+    clickWatch?.stop();
   });
   app.on('window-all-closed', () => app.quit());
 }

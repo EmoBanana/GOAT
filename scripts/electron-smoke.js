@@ -34,6 +34,7 @@ const env = {
   GOAT_TEST_HOOKS: '1',
   GOAT_FAKE_WINDOW: 'Google Chrome|Forma Build - Issues',
   GOAT_FAKE_OPENS: '', // "show me" opens no real app or website here; a check names the window that comes up
+  GOAT_FAKE_CLICKS: '', // no click helper: a check clicks through __goatTest.click(x, y)
   GOAT_USER: 'e2e-tester',
   GOAT_FAKE_CAPTURE: '1', // tests can't grant Screen Recording
   GOAT_TRACK_INTERVAL_SEC: '0.2',
@@ -233,9 +234,14 @@ try {
       assert.equal(await page.evaluate(() => window.GOATUI.state().guide.located), 'live');
       let tip = await tipAt();
       assert.ok(Math.abs(tip.x - 650) <= 1 && Math.abs(tip.y - 215) <= 1, `on Filters: ${JSON.stringify(tip)}`);
+      // "Click Filters." waits for the click: Next is off until the user clicks Filters.
+      assert.equal(await page.evaluate(() => document.querySelector('#goat-bubble .next').disabled), true);
+      await app.evaluate(() => globalThis.__goatTest.click(900, 500)); // somewhere else
+      await sleep(700);
+      assert.equal(await page.evaluate(() => window.GOATUI.state().guide.index), 0, 'a click elsewhere leaves it on Filters');
       // Clicking Filters opens a menu with Assignee in it; the next step finds it there.
       await setTargets([...screenNow, { label: 'Assignee', role: 'option', x: 600, y: 260, w: 140, h: 28 }]);
-      await page.click('#goat-bubble .next');
+      await app.evaluate(() => globalThis.__goatTest.click(650, 215));
       await until(() => page.evaluate(() => window.GOATUI.state().guide?.index === 1 && window.GOATUI.state().guide.landed), 'the second step');
       tip = await tipAt();
       assert.ok(Math.abs(tip.x - 670) <= 1 && Math.abs(tip.y - 274) <= 1, `on Assignee: ${JSON.stringify(tip)}`);

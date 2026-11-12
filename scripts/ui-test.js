@@ -229,6 +229,56 @@ await check('dwell: hovering within 28 px for 450 ms advances, and finishes the 
   await until(async () => near(await tip(), { x: STEPS[2].x + 14, y: STEPS[2].y - 20 + 16 }, 0.5), 'the cursor back beside the system cursor');
 });
 
+await check('a step that asks for a click waits for the click on its control: Next is off, hovering and waiting do nothing', async () => {
+  await setReply('watchClicks', true);
+  await page.evaluate(() => (window.__calls.length = 0));
+  const guide = {
+    id: 'click-guide',
+    title: 'Click guide',
+    intro: 'Three steps.',
+    steps: [
+      { x: 300, y: 220, label: 'Filters', say: 'Click Filters.' },
+      { x: 900, y: 260, label: 'Assignee', say: 'Then pick the assignee.', waitMs: 600 },
+      { x: 640, y: 620, label: 'List', say: 'Check the list.' },
+    ],
+  };
+  await page.evaluate((g) => {
+    window.GOATUI.playGuide(g); // runs until the clicks below finish it
+  }, guide);
+  const at = async (index) => {
+    const s = await ui();
+    return s.guide && s.guide.index === index && s.guide.landed && s;
+  };
+  const next = () => page.evaluate(() => ({ disabled: document.querySelector('#goat-bubble .next').disabled, row: document.querySelector('#goat-bubble .row').innerText }));
+  await until(() => at(0), 'step 1');
+  const first = await next();
+  assert.equal(first.disabled, true, 'Next is off');
+  assert.match(first.row, /Step 1 of 3 · click it to go on/);
+  assert.deepEqual((await calls('watchClicks')).map((c) => c.args), [[true]], "main watches the user's clicks");
+  // Pressing the switched-off Next, hovering on the control and waiting all leave it on step 1.
+  await page.evaluate(() => document.querySelector('#goat-bubble .next').click());
+  await emit({ type: 'cursor', x: 305, y: 225 });
+  await sleep(700);
+  assert.equal((await ui()).guide.index, 0, 'Next, hovering and waiting do nothing');
+  await emit({ type: 'click', x: 700, y: 700 });
+  await sleep(700);
+  assert.equal((await ui()).guide.index, 0, 'a click elsewhere does nothing');
+  await shot('ui-23-click-step');
+  // The click on Filters (within its recorded point's reach) moves the guide on.
+  await emit({ type: 'click', x: 310, y: 230 });
+  await until(() => at(1), 'step 2 after the click');
+  await sleep(900); // longer than the step's waitMs
+  assert.equal((await ui()).guide.index, 1, "a click step's waitMs doesn't move it on either");
+  await emit({ type: 'click', x: 900, y: 260 });
+  await until(() => at(2), 'step 3 after the second click');
+  // Not a click step: Next is on, as before.
+  assert.equal((await next()).disabled, false);
+  await page.click('#goat-bubble .next');
+  await until(async () => (await ui()).guide === null, 'the guide to finish');
+  assert.deepEqual((await calls('watchClicks')).map((c) => c.args), [[true], [false]], 'and stops watching when the guide ends');
+  await setReply('watchClicks', undefined);
+});
+
 await check('LLM reply: a clean answer bubble, with no model or credit line', async () => {
   await setReply('ask', LLM_REPLY);
   await askVia('why do issues need a photo?');
