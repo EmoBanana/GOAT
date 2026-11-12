@@ -161,7 +161,7 @@
             return;
           }
           ui.setChat(chat);
-          ui.openAsk({});
+          ui.openAsk({ showThread: true }); // you picked it to see it
           return;
         }
         if (target.dataset.delete) {

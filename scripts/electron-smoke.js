@@ -142,6 +142,9 @@ try {
     ollama.calls.length = 0;
     await app.evaluate(() => globalThis.__goatTest.openAsk());
     await page.waitForSelector('.ask-thread', { state: 'visible' });
+    assert.match(await page.locator('.ask-thread').innerText(), /Why do issues need a photo\?/);
+    assert.doesNotMatch(await page.locator('.ask-thread').innerText(), /evidence/, 'folded to its last question');
+    await page.click('[data-action="toggle-thread"]');
     assert.match(await page.locator('.ask-thread').innerText(), /Why do issues need a photo\?[\s\S]*evidence/);
     await page.fill('#goat-ask-input', 'and who checks the fix?');
     await page.press('#goat-ask-input', 'Enter');

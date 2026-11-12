@@ -794,6 +794,7 @@ await check('account (Ctrl+Option+A): who you are, your balance and your chats; 
   const thread = await page.locator('.ask-thread').innerText();
   assert.match(thread, /Why do issues need a photo\?[\s\S]*Photos are the evidence[\s\S]*Showed the guide “Log an issue in Forma Build”/);
   assert.equal(await page.getAttribute('#goat-ask-input', 'placeholder'), 'Ask a follow-up…');
+  assert.equal(await page.locator('[data-action="toggle-thread"]').innerText(), 'Hide', 'a chat picked in the account panel opens listed');
   await shot('ui-19-thread');
 
   // The follow-up continues that chat.
@@ -808,12 +809,28 @@ await check('account (Ctrl+Option+A): who you are, your balance and your chats; 
   await until(() => page.evaluate(() => (window.GOATUI.chat() || { turns: [] }).turns.length === 3), 'the chat to grow');
   await page.keyboard.press('Escape');
 
-  // New chat: the thread goes and the next ask starts fresh.
+  // Ctrl+Option+G: the chat folds to one line (its last question), so the panel stays small;
+  // Show lists the turns and typing carries on.
   await emit({ type: 'open-ask', context: {} });
   await page.waitForSelector('.ask-thread', { state: 'visible' });
-  assert.match(await page.locator('.ask-thread').innerText(), /and who checks it\?[\s\S]*Whoever raised it checks the fix\./);
+  const folded = await page.evaluate(() => {
+    const t = document.querySelector('.ask-thread');
+    return { text: t.innerText, height: t.getBoundingClientRect().height };
+  });
+  assert.match(folded.text, /this chat\s*and who checks it\?\s*Show\s*New chat/i);
+  assert.doesNotMatch(folded.text, /Whoever raised it/, 'answers stay folded away');
+  assert.ok(folded.height <= 40, `the chat takes one line, not ${folded.height}px`);
+  await shot('ui-19b-thread-folded');
+  await page.click('[data-action="toggle-thread"]');
+  assert.match(await page.locator('.ask-thread').innerText(), /Hide[\s\S]*and who checks it\?[\s\S]*Whoever raised it checks the fix\./);
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'goat-ask-input', 'typing carries on');
+  await page.click('[data-action="toggle-thread"]');
+  assert.doesNotMatch(await page.locator('.ask-thread').innerText(), /Whoever raised it/);
+
+  // New chat: the thread goes and the next ask starts fresh.
   await page.click('[data-action="new-chat"]');
   assert.equal(await page.locator('.ask-thread').isHidden(), true);
+  assert.equal(await page.getAttribute('#goat-ask-input', 'placeholder'), 'Ask GOAT… e.g. how do I log an issue?');
   await setReply('ask', { ...LLM_REPLY, chatId: 'bbbbbbbbbbbbbbbb', chatTitle: 'fresh', chatTurns: 1 });
   await page.keyboard.type('fresh question');
   await page.keyboard.press('Enter');

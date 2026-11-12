@@ -38,6 +38,7 @@
     info: { platform: 'darwin', hotkeys: { ask: 'Ctrl+Option+G' } },
     chat: null, // the chat being continued: { id, title, turns: [{ question, answer, source, guide }] }
     chatAt: 0, // when it was last used
+    threadOpen: false, // the ask panel lists the chat's turns (else one line)
   };
 
   // ---------- event bus ----------
@@ -563,12 +564,14 @@
     return Object.keys(extra).length ? extra : undefined;
   }
 
+  const ASK_PLACEHOLDER = 'Ask GOAT… e.g. how do I log an issue?';
   const ASK_HTML =
     '<form class="ask-form" autocomplete="off">' +
-    '<div class="ask-thread" hidden><div class="thread-head"><span class="thread-title"></span>' +
-    '<button type="button" class="thread-new" data-action="new-chat">New chat</button></div><ol class="thread-turns"></ol></div>' +
+    '<div class="ask-thread" hidden><div class="thread-head"><span class="thread-title">This chat</span><span class="thread-last"></span>' +
+    '<button type="button" class="thread-toggle" data-action="toggle-thread" aria-expanded="false">Show</button>' +
+    '<button type="button" class="thread-new" data-action="new-chat">New chat</button></div><ol class="thread-turns" hidden></ol></div>' +
     `<div class="ask-row"><span class="ask-icon">${ART.cursorSvg()}</span>` +
-    '<input id="goat-ask-input" class="ask-input" type="text" maxlength="1000" spellcheck="false" placeholder="Ask GOAT… e.g. how do I log an issue?"></div>' +
+    `<input id="goat-ask-input" class="ask-input" type="text" maxlength="1000" spellcheck="false" placeholder="${ASK_PLACEHOLDER}"></div>` +
     '<div class="ask-meta"><span class="ask-context"></span><span class="ask-hint">Enter to ask · Esc to close</span></div>' +
     '</form>';
 
@@ -594,39 +597,51 @@
   }
   const currentChatId = () => (state.chat ? state.chat.id : null);
 
+  // Folded, the chat is one line above the input (its last question), so the panel covers
+  // little more than a plain ask. Show lists its last turns.
   function renderThread(p) {
     const box = p.querySelector('.ask-thread');
     const turns = state.chat ? state.chat.turns.slice(-THREAD_TURNS) : [];
     box.hidden = !turns.length;
+    p.querySelector('#goat-ask-input').placeholder = turns.length ? 'Ask a follow-up…' : ASK_PLACEHOLDER;
     if (!turns.length) return;
-    p.querySelector('.thread-title').textContent = 'This chat';
+    const open = state.threadOpen;
+    box.classList.toggle('open', open);
+    const toggle = p.querySelector('[data-action="toggle-thread"]');
+    toggle.textContent = open ? 'Hide' : 'Show';
+    toggle.setAttribute('aria-expanded', String(open));
+    // Chat text comes from the model and the user: text only, never HTML.
+    p.querySelector('.thread-last').textContent = open ? '' : turns[turns.length - 1].question;
     const list = p.querySelector('.thread-turns');
     list.replaceChildren(
       ...turns.map((t) => {
-        // Chat text comes from the model and the user: text only, never HTML.
         const li = el('li', 'turn');
         li.append(el('div', 'turn-q', t.question));
         li.append(el('div', 'turn-a', t.source === 'guide' && t.guide ? `Showed the guide “${t.guide.title}”.` : t.answer));
         return li;
       }),
     );
-    p.querySelector('#goat-ask-input').placeholder = 'Ask a follow-up…';
-    list.scrollTop = list.scrollHeight;
+    list.hidden = !open;
+    if (open) list.scrollTop = list.scrollHeight;
   }
 
+  // opts.showThread: open with the chat's turns listed (a chat picked in the account panel).
   function openAsk(opts = {}) {
     stopGuide('ask');
     hideBubble();
     if (state.chat && Date.now() - state.chatAt > CHAT_FRESH_MS) setChat(null);
+    state.threadOpen = Boolean(opts.showThread);
     const p = openPanel({
       name: 'ask',
       html: ASK_HTML,
       focus: '#goat-ask-input',
       onclick: (event) => {
-        if (!event.target.closest('[data-action="new-chat"]')) return;
-        setChat(null);
+        const button = event.target.closest('[data-action]');
+        if (!button) return;
+        if (button.dataset.action === 'toggle-thread') state.threadOpen = !state.threadOpen;
+        else if (button.dataset.action === 'new-chat') setChat(null);
+        else return;
         renderThread(p);
-        p.querySelector('#goat-ask-input').placeholder = 'Ask GOAT… e.g. how do I log an issue?';
         p.querySelector('#goat-ask-input').focus();
       },
       onsubmit: (event) => {

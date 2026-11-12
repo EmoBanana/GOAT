@@ -400,12 +400,17 @@ body {
 }
 .toast.link { cursor: pointer; text-decoration: underline dotted rgba(255, 255, 255, 0.6); }
 
-/* The current chat above the ask input, so a question can be continued. */
-.ask-thread { margin: 0 0 10px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
-.thread-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
-.thread-title { flex: 1; color: var(--muted); font: 600 10.5px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
-.panel button.thread-new { padding: 0; border: 0; background: none; color: var(--blue); font-size: 12px; font-weight: 500; }
-.panel button.thread-new:hover { background: none; text-decoration: underline; text-underline-offset: 2px; }
+/* The current chat above the ask input, so a question can be continued: one line (its last
+   question) until Show lists the turns, so the panel doesn't cover the screen. */
+.ask-thread { margin: 0 0 8px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.thread-head { display: flex; align-items: baseline; gap: 10px; }
+.ask-thread.open .thread-head { margin-bottom: 8px; }
+.thread-title { flex: none; color: var(--muted); font: 600 10.5px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+.thread-last { flex: 1; min-width: 0; overflow: hidden; color: var(--ink-2); font-size: 12.5px; white-space: nowrap; text-overflow: ellipsis; }
+.panel button.thread-toggle, .panel button.thread-new { flex: none; padding: 0; border: 0; background: none; font-size: 12px; font-weight: 500; }
+.panel button.thread-toggle { color: var(--muted); }
+.panel button.thread-new { color: var(--blue); }
+.panel button.thread-toggle:hover, .panel button.thread-new:hover { background: none; text-decoration: underline; text-underline-offset: 2px; }
 .thread-turns { display: grid; gap: 9px; max-height: 30vh; margin: 0; padding: 0; overflow: auto; list-style: none; }
 .turn-q { color: var(--ink); font-size: 13px; font-weight: 600; }
 .turn-a { margin-top: 2px; color: var(--ink-2); font-size: 12.5px; line-height: 1.5; white-space: pre-wrap; }
