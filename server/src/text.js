@@ -8,7 +8,7 @@ const STOPWORDS = new Set(`
   is are am was were be been being it its this that these those there here
   and or but so if then than also just like
   what whats which who whom whose where when why
-  some any get got want wanna need let lets dont
+  some any get got want wanna need let lets dont use uses used using
 `.split(/\s+/).filter(Boolean));
 
 export function stem(word) {
