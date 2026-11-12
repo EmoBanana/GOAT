@@ -1,0 +1,20 @@
+{
+  "name": "goat",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Hackathon project",
+  "type": "module",
+  "main": "app/main.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node scripts/dev.js",
+    "server": "node server/src/index.js",
+    "app": "electron .",
+    "test": "node --test \"server/test/**/*.test.js\" \"app/test/**/*.test.js\"",
+    "test:ui": "node scripts/ui-test.js",
+    "test:electron": "node scripts/electron-smoke.js",
+    "smoke": "node scripts/smoke-ollama.js"
+  }
+}
