@@ -8,8 +8,10 @@ export async function startMockOllama({
   rejectThink = false,
   reply = (body) => `Mock answer from ${body.model}.`,
   transcript = 'How do I log an issue?',
+  thinking = 'Mock reasoning.',
+  toolCalls = null, // (body) => [{ function: { name, arguments } }] when the request offers tools
 } = {}) {
-  const state = { models: [...models], rejectThink, reply, transcript, calls: [] };
+  const state = { models: [...models], rejectThink, reply, transcript, thinking, toolCalls, calls: [] };
 
   const server = http.createServer(async (req, res) => {
     const chunks = [];
@@ -38,11 +40,17 @@ export async function startMockOllama({
       const hasWav = (body.messages || []).some((m) =>
         (m.images || []).some((b64) => Buffer.from(String(b64).slice(0, 24), 'base64').toString('latin1').startsWith('RIFF')),
       );
+      const calls = body.tools?.length && state.toolCalls ? state.toolCalls(body) : null;
+      if (calls?.length) {
+        return send(200, { model: body.model, message: { role: 'assistant', content: '', tool_calls: calls }, done: true, done_reason: 'stop' });
+      }
       const content = !body.messages?.length ? '' : hasWav ? state.transcript : state.reply(body);
+      const message = { role: 'assistant', content };
+      if (body.think && body.messages?.length) message.thinking = state.thinking;
       return send(200, {
         model: body.model,
         created_at: new Date().toISOString(),
-        message: { role: 'assistant', content },
+        message,
         done: true,
         done_reason: body.messages?.length ? 'stop' : 'load',
       });

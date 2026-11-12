@@ -3,7 +3,7 @@ import { HttpError } from './errors.js';
 import { guideSummary, publicGuide } from './guides/store.js';
 import { sanitizeUserId } from './users.js';
 
-export function createApp({ config, guides, docs, llm, users, assist, logger = console }) {
+export function createApp({ config, guides, docs, llm, users, assist, mcp, logger = console }) {
   const app = express();
   app.disable('x-powered-by');
   app.use(express.json({ limit: '5mb' }));
@@ -19,6 +19,8 @@ export function createApp({ config, guides, docs, llm, users, assist, logger = c
       models: { base: config.model, pro: config.modelPro, stt: config.sttModel },
       ollama: { host: config.ollamaHost, ...ollama },
       payments: { mode: config.payments, enforced: false },
+      think: config.think,
+      mcp: mcp ? mcp.status() : [],
       guides: guides.count(),
       docs: { files: docs.files, chunks: docs.count },
     });

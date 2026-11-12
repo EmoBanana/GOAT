@@ -252,6 +252,24 @@ await check('the answer bubble follows the cursor, lets clicks through and hides
   await shot('ui-04b-llm-follows');
 });
 
+await check('a deep answer says it thought and searched, and lists its web sources', async () => {
+  await setReply('ask', {
+    ...LLM_REPLY,
+    say: 'Open the schedule, then File > Export > Reports > Schedule.',
+    thought: true,
+    searched: [{ tool: 'brave_web_search', query: 'revit export schedule' }],
+    sources: [{ type: 'web', url: 'https://help.autodesk.com/view/RVT/2027/ENU/' }, { type: 'web', url: 'https://www.revitforum.org/t/1' }],
+  });
+  await askVia('how do I export a schedule from revit?');
+  const b = await until(async () => {
+    const x = await bubble();
+    return x.visible && /searched the web/.test(x.text) && x;
+  }, 'the deep answer');
+  assert.match(b.text, /gemma4:e4b-it-qat · running on this laptop · thought it through · searched the web/);
+  assert.match(b.text, /Sources: help\.autodesk\.com, revitforum\.org/);
+  await shot('ui-04c-deep-answer');
+});
+
 await check('errors show in a red bubble', async () => {
   await setReply('ask', ERROR_REPLY);
   await askVia('why do issues need a photo?');

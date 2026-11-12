@@ -201,7 +201,7 @@
     placeBubble(state.pos);
   }
 
-  // opts: { kind, text, intro, meta, step, total, next, nextLabel, at, ms, follow, onAction }
+  // opts: { kind, text, intro, meta, sources, step, total, next, nextLabel, at, ms, follow, onAction }
   // follow: ride beside the blue cursor. A following bubble can't be reached with the mouse, so
   // it lets clicks through, has no Close button and hides after a reading time (or Esc).
   function showBubble(opts = {}) {
@@ -220,6 +220,7 @@
     if (opts.intro) b.append(el('div', 'intro', opts.intro));
     b.append(el('div', 'text', opts.text || ''));
     if (opts.meta) b.append(el('div', 'meta', opts.meta));
+    if (opts.sources) b.append(el('div', 'sources', opts.sources));
     if (opts.step || opts.next) {
       const row = el('div', 'row');
       row.append(el('span', 'step', opts.step ? `Step ${opts.step} of ${opts.total}` : ''));
@@ -433,7 +434,22 @@
       playGuide(reply.guide);
       return;
     }
-    showBubble({ kind: 'answer', text: reply.say || '…', meta: reply.model ? `${reply.model} · running on this laptop` : '', follow: true });
+    const meta = reply.model
+      ? [`${reply.model} · running on this laptop`, reply.thought && 'thought it through', reply.searched && reply.searched.length && 'searched the web']
+          .filter(Boolean)
+          .join(' · ')
+      : '';
+    const hosts = (reply.sources || [])
+      .filter((s) => s.type === 'web')
+      .map((s) => {
+        try {
+          return new URL(s.url).hostname.replace(/^www\./, '');
+        } catch {
+          return '';
+        }
+      })
+      .filter(Boolean);
+    showBubble({ kind: 'answer', text: reply.say || '…', meta, sources: hosts.length ? `Sources: ${hosts.join(', ')}` : '', follow: true });
     speak(reply.say);
   }
 

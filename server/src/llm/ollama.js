@@ -60,16 +60,30 @@ export function createOllama({ host, keepAlive = '30m', timeoutMs = 120_000, fet
     throw new HttpError(502, 'model_error', `Ollama said: ${message}`, { model });
   }
 
-  // Non-streaming chat. Older Ollama builds reject `think`; retry once without it.
-  async function chat({ model, messages, temperature = 0.3 }) {
-    const body = { model, messages, stream: false, think: false, keep_alive: keepAlive, options: { temperature } };
+  // Non-streaming chat. think: false answers fast; true lets Gemma reason first. tools: Ollama
+  // function specs (from MCP servers). Older Ollama builds reject `think`, and some models
+  // reject tools: retry once without the offending field.
+  async function chat({ model, messages, temperature = 0.3, think = false, tools }) {
+    let body = { model, messages, stream: false, think, keep_alive: keepAlive, options: { temperature } };
+    if (tools?.length) body.tools = tools;
     let r = await post('/api/chat', body);
     if (r.status === 400 && /think/i.test(errorText(r))) {
-      const { think, ...withoutThink } = body;
-      r = await post('/api/chat', withoutThink);
+      const { think: _think, ...rest } = body;
+      body = rest;
+      r = await post('/api/chat', body);
+    }
+    if (r.status === 400 && body.tools && /tool/i.test(errorText(r))) {
+      const { tools: _tools, ...rest } = body;
+      r = await post('/api/chat', rest);
     }
     if (!r.ok) fail(r, model);
-    return { text: stripThink(r.data?.message?.content), model };
+    const message = r.data?.message || {};
+    return {
+      text: stripThink(message.content),
+      thinking: typeof message.thinking === 'string' ? message.thinking : '',
+      toolCalls: Array.isArray(message.tool_calls) ? message.tool_calls : [],
+      model,
+    };
   }
 
   // Loads the model into memory without generating anything.

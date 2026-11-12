@@ -7,7 +7,14 @@ const envFile = path.join(ROOT, '.env');
 if (fs.existsSync(envFile)) process.loadEnvFile(envFile);
 
 const config = loadConfig();
-const { app, guides, docs, llm } = await buildServer(config);
+const { app, guides, docs, llm, mcp } = await buildServer(config);
+
+function shutdown() {
+  mcp.close();
+  process.exit(0);
+}
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
 
 try {
   await listen(app, config);
@@ -19,6 +26,12 @@ try {
   throw err;
 }
 console.log(`[goat] Server on http://${config.host}:${config.port} · ${guides.count()} guides · ${docs.count} doc chunks`);
+
+// Tools for questions the SOPs don't cover (config/mcp.json), started in the background.
+for (const s of mcp.status()) {
+  if (!s.enabled) console.log(`[goat] MCP ${s.name} is off: ${s.reason}`);
+}
+if (mcp.enabled) mcp.start();
 
 const ollama = await llm.status(config.model);
 if (!ollama.reachable) {

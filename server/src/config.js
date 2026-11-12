@@ -47,6 +47,9 @@ export function loadConfig(env = process.env, root = ROOT) {
     keepAlive: str(env.OLLAMA_KEEP_ALIVE, '30m'),
     llmTimeoutMs: num(env.GOAT_LLM_TIMEOUT_MS, 120_000),
     warmModel: str(env.GOAT_WARM, '1') !== '0',
+    // auto: Gemma thinks (and may search) only when no SOP or guide covers the question.
+    think: ['auto', 'off', 'always'].includes(str(env.GOAT_THINK, 'auto')) ? str(env.GOAT_THINK, 'auto') : 'auto',
+    mcpConfig: path.resolve(root, str(env.GOAT_MCP_CONFIG, 'config/mcp.json')),
     payments: str(env.GOAT_PAYMENTS, 'x402-local'),
     guidesDir: path.resolve(root, str(env.GOAT_GUIDES_DIR, 'guides')),
     docsDir: path.resolve(root, str(env.GOAT_DOCS_DIR, 'docs')),

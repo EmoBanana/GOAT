@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, test } from 'node:test';
+import { fileURLToPath } from 'node:url';
+import { isSmallTalk, plainText } from '../src/assist.js';
 import { DEFAULT_MODEL } from '../src/config.js';
 import { closedPortUrl, startMockOllama } from './helpers/mock-ollama.js';
 import { startTestServer } from './helpers/test-server.js';
@@ -185,4 +187,139 @@ describe('model problems', () => {
       await ollama.close();
     }
   });
+});
+
+describe('adaptive thinking and MCP tools', () => {
+  const MOCK_MCP = fileURLToPath(new URL('./helpers/mock-mcp-server.js', import.meta.url));
+  const searchConfig = { mcpServers: { search: { command: process.execPath, args: [MOCK_MCP], tools: ['brave_web_search'] } } };
+  const offTopic = 'How do I export a schedule from Revit?';
+
+  test('small talk answers fast: no context, no thinking, no tools', async () => {
+    const ollama = await startMockOllama({ reply: () => 'Hi! Ask me anything.' });
+    const srv = await startTestServer({ ollamaUrl: ollama.url, mcp: { config: searchConfig } });
+    try {
+      const r = await srv.request('POST', '/api/assist', { body: { question: 'hi', context: inForma } });
+      assert.equal(r.body.say, 'Hi! Ask me anything.');
+      assert.equal(r.body.thought, false);
+      const [call] = ollama.chats();
+      assert.equal(call.body.think, false);
+      assert.equal(call.body.tools, undefined);
+      assert.equal(call.body.messages[1].content, 'hi');
+    } finally {
+      await srv.close();
+      await ollama.close();
+    }
+  });
+
+  test('questions the SOP covers answer fast, without tools', async () => {
+    const ollama = await startMockOllama();
+    const srv = await startTestServer({ ollamaUrl: ollama.url, mcp: { config: searchConfig } });
+    try {
+      const r = await srv.request('POST', '/api/assist', { body: { question: 'Who should I assign a defect to?' } });
+      assert.equal(r.body.thought, false);
+      const [call] = ollama.chats();
+      assert.equal(call.body.think, false);
+      assert.equal(call.body.tools, undefined);
+    } finally {
+      await srv.close();
+      await ollama.close();
+    }
+  });
+
+  test('with nothing relevant found, Gemma thinks first', async () => {
+    const ollama = await startMockOllama({ reply: () => 'Use **File > Export > Reports**.' });
+    const srv = await startTestServer({ ollamaUrl: ollama.url });
+    try {
+      const r = await srv.request('POST', '/api/assist', { body: { question: offTopic } });
+      assert.equal(r.body.thought, true);
+      assert.equal(r.body.say, 'Use File > Export > Reports.', 'markdown is stripped');
+      const [call] = ollama.chats();
+      assert.equal(call.body.think, true);
+      assert.equal(call.body.tools, undefined, 'no MCP servers configured');
+      assert.match(call.body.messages[0].content, /think it through/);
+    } finally {
+      await srv.close();
+      await ollama.close();
+    }
+  });
+
+  test('then it can search the web through MCP and answer from the results', async () => {
+    let round = 0;
+    const ollama = await startMockOllama({
+      toolCalls: (body) => (body.messages.some((m) => m.role === 'tool') ? null : [{ function: { name: 'brave_web_search', arguments: { query: 'revit export schedule' } } }]),
+      reply: () => `Answer after ${(round += 1)} search.`,
+    });
+    const srv = await startTestServer({ ollamaUrl: ollama.url, mcp: { config: searchConfig } });
+    try {
+      const r = await srv.request('POST', '/api/assist', { body: { question: offTopic, context: { app: 'Revit', title: 'ALP-GAM-ZZ-XX-M3-S-0001.rvt' } } });
+      assert.equal(r.status, 200);
+      assert.equal(r.body.say, 'Answer after 1 search.');
+      assert.equal(r.body.thought, true);
+      assert.deepEqual(r.body.searched, [{ tool: 'brave_web_search', query: 'revit export schedule' }]);
+      assert.deepEqual(
+        r.body.sources.filter((s) => s.type === 'web').map((s) => new URL(s.url).hostname),
+        ['help.autodesk.com', 'forums.autodesk.com'],
+      );
+
+      const [first, second] = ollama.chats();
+      assert.equal(first.body.think, true);
+      assert.deepEqual(first.body.tools.map((t) => t.function.name), ['brave_web_search']);
+      assert.match(first.body.messages[0].content, /web search/);
+      const userText = first.body.messages[1].content;
+      assert.match(userText, /App: Revit/);
+      assert.doesNotMatch(userText, /ALP-GAM/, 'window titles stay out of prompts that can search');
+      const toolMessage = second.body.messages.find((m) => m.role === 'tool');
+      assert.equal(toolMessage.tool_name, 'brave_web_search');
+      assert.match(toolMessage.content, /Export schedules/);
+      assert.ok(second.body.messages.some((m) => m.role === 'assistant' && m.tool_calls?.length));
+    } finally {
+      await srv.close();
+      await ollama.close();
+    }
+  });
+
+  test('tool rounds are capped, then the model must answer', async () => {
+    const ollama = await startMockOllama({
+      toolCalls: () => [{ function: { name: 'brave_web_search', arguments: '{"query":"again"}' } }],
+      reply: () => 'Final answer.',
+    });
+    const srv = await startTestServer({ ollamaUrl: ollama.url, mcp: { config: searchConfig } });
+    try {
+      const r = await srv.request('POST', '/api/assist', { body: { question: offTopic } });
+      assert.equal(r.body.say, 'Final answer.');
+      assert.equal(r.body.searched.length, 2);
+      const chats = ollama.chats();
+      assert.equal(chats.length, 3);
+      assert.equal(chats[2].body.tools, undefined);
+    } finally {
+      await srv.close();
+      await ollama.close();
+    }
+  });
+
+  test('GOAT_THINK=off never thinks; GOAT_THINK=always always does', async () => {
+    const ollama = await startMockOllama();
+    const off = await startTestServer({ ollamaUrl: ollama.url, env: { GOAT_THINK: 'off' } });
+    const always = await startTestServer({ ollamaUrl: ollama.url, env: { GOAT_THINK: 'always' } });
+    try {
+      await off.request('POST', '/api/assist', { body: { question: offTopic } });
+      await always.request('POST', '/api/assist', { body: { question: 'Who should I assign a defect to?' } });
+      assert.deepEqual(
+        ollama.chats().map((c) => c.body.think),
+        [false, true],
+      );
+    } finally {
+      await off.close();
+      await always.close();
+      await ollama.close();
+    }
+  });
+});
+
+test('plainText strips markdown the model slips in', () => {
+  assert.equal(plainText('**Bold** and *italic* with `code`'), 'Bold and italic with code');
+  assert.equal(plainText('## Title\n- one\n- two\n1. three'), 'Title\none\ntwo\nthree');
+  assert.equal(plainText('2 * 3 = 6'), '2 * 3 = 6');
+  assert.equal(isSmallTalk('Hi GOAT!'), true);
+  assert.equal(isSmallTalk('hi, how do I log an issue?'), false);
 });

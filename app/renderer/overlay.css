@@ -89,6 +89,7 @@ body {
   background: #16a34a;
   vertical-align: 1px;
 }
+.bubble .sources { margin-top: 3px; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
 .bubble .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; }
 .bubble .step { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .bubble button { font: inherit; cursor: pointer; }
