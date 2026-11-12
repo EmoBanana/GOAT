@@ -95,11 +95,18 @@ test('a guide recorded on this Mac beats a sample guide, even with the app bonus
   assert.equal(matchGuide('how do I raise an issue', [sample, recorded], inForma).guide.id, 'forma-log-issue');
 });
 
-test('related guides are app matches or partial matches (score >= 0.34)', () => {
-  const deck = { id: 'deck', triggers: ['present the pitch'], apps: ['Keynote'] };
+test('related guides are partial matches, or guides for the app in front that share a word with the question', () => {
+  const deck = { id: 'deck', title: 'Pitch deck tour', triggers: ['present the pitch'], apps: ['Keynote'], steps: [{ label: 'Business model', say: 'How we make money.' }] };
   const other = { id: 'other', triggers: ['approve a timesheet'], apps: ['Excel'] };
-  const ids = relatedGuides('why do we report defects', [forma, deck, other], { app: 'Keynote' }).map((r) => r.guide.id);
-  assert.deepEqual(ids.sort(), ['deck', 'forma-log-issue']);
-  const oneWord = relatedGuides('why do issues need photos', [forma, deck, other], { app: 'Keynote' }).map((r) => r.guide.id);
-  assert.deepEqual(oneWord, ['deck']);
+  const ids = (q, ctx) => relatedGuides(q, [forma, deck, other], ctx).map((r) => r.guide.id);
+  // "report a defect" is a Forma trigger; the deck guide is for the app in front but shares no word.
+  assert.deepEqual(ids('why do we report defects', { app: 'Keynote' }), ['forma-log-issue']);
+  assert.deepEqual(ids('why do issues need photos', { app: 'Keynote' }), []);
+  // The app in front plus a word from the guide's title, triggers or step names.
+  assert.deepEqual(ids('what goes on the business model slide?', { app: 'Keynote' }), ['deck']);
+  assert.deepEqual(ids('what goes on the business model slide?', { app: 'Excel' }), []);
+  // A recorded IDE guide is no context for a Revit question asked with the IDE in front.
+  const ide = { id: 'test', title: 'Test', triggers: ['pitch deck tour'], apps: ['Antigravity IDE'], steps: [{ label: 'json', say: 'Click on the json file' }] };
+  assert.deepEqual(relatedGuides('how do I set up the model in revit', [ide], { app: 'Antigravity IDE' }), []);
+  assert.equal(relatedGuides('which json file holds the settings?', [ide], { app: 'Antigravity IDE' })[0].guide.id, 'test');
 });

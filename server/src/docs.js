@@ -31,6 +31,31 @@ export function splitByHeadings(markdown) {
   return chunks;
 }
 
+// Optional front matter (`---` lines at the very top) with `key: value` lines.
+export function frontMatter(markdown) {
+  const text = String(markdown);
+  const m = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(text);
+  if (!m) return { meta: {}, body: text };
+  const meta = {};
+  for (const line of m[1].split(/\r?\n/)) {
+    const kv = /^\s*([A-Za-z][\w-]*)\s*:\s*(.*?)\s*$/.exec(line);
+    if (kv) meta[kv[1].toLowerCase()] = kv[2];
+  }
+  return { meta, body: text.slice(m[0].length) };
+}
+
+// `about: GOAT, x402, Model Context Protocol` limits a doc to questions that mention one of
+// those terms (a phrase counts when its words come in order). A doc about GOAT itself would
+// otherwise answer "how do I search on Google" or "set up the model in Revit" from its own setup notes.
+export function aboutTerms(meta) {
+  const terms = String(meta.about || '')
+    .split(',')
+    .map((t) => tokens(t))
+    .filter((t) => t.length);
+  return terms.length ? terms : null;
+}
+const mentions = (words, term) => words.some((_, i) => term.every((t, j) => words[i + j] === t));
+
 export function createDocs({ dir }) {
   const chunks = [];
   let files = [];
@@ -40,10 +65,11 @@ export function createDocs({ dir }) {
     if (err.code !== 'ENOENT') throw err;
   }
   for (const file of files) {
-    const markdown = fs.readFileSync(path.join(dir, file), 'utf8');
-    for (const c of splitByHeadings(markdown)) {
+    const { meta, body } = frontMatter(fs.readFileSync(path.join(dir, file), 'utf8'));
+    const about = aboutTerms(meta);
+    for (const c of splitByHeadings(body)) {
       const section = c.heading.split(' › ').pop();
-      chunks.push({ file, ...c, tokens: new Set(tokens(`${c.heading}\n${c.text}`)), headingTokens: new Set(tokens(section)) });
+      chunks.push({ file, about, ...c, tokens: new Set(tokens(`${c.heading}\n${c.text}`)), headingTokens: new Set(tokens(section)) });
     }
   }
 
@@ -55,10 +81,12 @@ export function createDocs({ dir }) {
   // Chunks where at least minShare of the question's tokens appear, ranked by how rare the
   // matching words are, with matches in the section heading counting extra.
   function search(question, { limit = 2, minShare = 0.34 } = {}) {
-    const q = [...new Set(tokens(question))];
+    const words = tokens(question);
+    const q = [...new Set(words)];
     if (!q.length) return [];
     const total = q.reduce((sum, t) => sum + idf(t), 0) || 1;
     return chunks
+      .filter((c) => !c.about || c.about.some((term) => mentions(words, term)))
       .map((c) => {
         const hits = q.filter((t) => c.tokens.has(t));
         const weight = hits.reduce((sum, t) => sum + idf(t) * (c.headingTokens.has(t) ? 1.5 : 1), 0) / total;

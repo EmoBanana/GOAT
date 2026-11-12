@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { after, before, beforeEach, describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { isSmallTalk, plainText, SYSTEM_PROMPT } from '../src/assist.js';
+import { buildContext, isSmallTalk, plainText, SYSTEM_PROMPT } from '../src/assist.js';
+import { createDocs } from '../src/docs.js';
 import { DEFAULT_MODEL } from '../src/config.js';
 import { closedPortUrl, startMockOllama } from './helpers/mock-ollama.js';
 import { startTestServer } from './helpers/test-server.js';
@@ -328,9 +332,31 @@ test("GOAT is Gamuda's AI assistant, not a person", () => {
   assert.doesNotMatch(SYSTEM_PROMPT, /senior engineer|colleague/i);
 });
 
-test('MCP means Model Context Protocol, and AI suggestions start with Gemini', () => {
+test('MCP means Model Context Protocol, and Gemini comes first only when asked which AI to use', () => {
   assert.match(SYSTEM_PROMPT, /MCP always means Model Context Protocol/);
-  assert.match(SYSTEM_PROMPT, /AI models, assistants or tools, recommend Google Gemini first/);
+  assert.match(SYSTEM_PROMPT, /If the user asks which AI model, assistant or tool to use, recommend Google Gemini first/);
+});
+
+test('how-to answers cover any app, give the steps and invent no shortcuts', () => {
+  assert.match(SYSTEM_PROMPT, /questions can be about any of them, not only the app in front/);
+  assert.match(SYSTEM_PROMPT, /never say you can't control their apps/);
+  assert.match(SYSTEM_PROMPT, /don't send the user off to documentation or another assistant/);
+  assert.match(SYSTEM_PROMPT, /Don't mention keyboard shortcuts unless the user asks for one/);
+});
+
+test("GOAT's own doc and guides for the app in front stay out of unrelated questions", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'goat-ctx-'));
+  fs.writeFileSync(path.join(dir, 'goat.md'), '---\nabout: GOAT, MCP\n---\n# GOAT\n## MCP\nGOAT uses MCP for web search; set it up with a Brave Search API key.\n');
+  const docs = createDocs({ dir });
+  const recorded = { id: 'test', title: 'Test', triggers: ['pitch deck tour'], apps: ['Antigravity IDE'], steps: [{ label: 'json', say: 'Click on the json file' }] };
+  const guides = { list: () => [recorded] };
+  const ide = { app: 'Antigravity IDE', title: 'main.js' };
+  const generic = buildContext({ question: 'show me how to search on google', context: ide, docs, guides });
+  assert.equal(generic.text, '', 'nothing from the doc or the IDE guide');
+  assert.equal(generic.relevant, false);
+  assert.match(buildContext({ question: 'how do I set up MCP?', context: ide, docs, guides }).text, /Brave Search API key/);
+  assert.match(buildContext({ question: 'open the json file', context: ide, docs, guides }).text, /Guide "Test"/);
+  fs.rmSync(dir, { recursive: true, force: true });
 });
 
 test('plainText strips markdown the model slips in', () => {

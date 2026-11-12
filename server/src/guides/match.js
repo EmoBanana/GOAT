@@ -47,12 +47,15 @@ export function scoreGuide(question, guide, context = {}) {
     if (base > best.base) best = { base, trigger };
   }
   const appMatch = appMatches(guide, context);
+  // Does the question share any word with what the guide is about (title, triggers, step names)?
+  const about = new Set([guide.title, ...(guide.triggers || []), ...(guide.steps || []).map((s) => s?.label)].flatMap((t) => words(t || '')));
   return {
     guide,
     base: round(best.base),
     score: round(best.base + (appMatch ? APP_BONUS : 0)),
     trigger: best.trigger,
     appMatch,
+    overlap: q.some((w) => about.has(w)),
   };
 }
 
@@ -77,11 +80,13 @@ export function matchGuide(question, guides, context = {}, threshold = THRESHOLD
   return best;
 }
 
-// Guides worth showing the model as context: same app, or a partial trigger match.
+// Guides worth showing the model as context: a partial trigger match, or a guide for the app in
+// front that shares a word with the question. An app match alone isn't enough: a recorded IDE
+// guide ("json: Click on the json file") as the only context made Gemma refuse a Revit question.
 export function relatedGuides(question, guides, context = {}, limit = 2) {
   return guides
     .map((g) => scoreGuide(question, g, context))
-    .filter((s) => s.appMatch || s.score >= RELATED_MIN)
+    .filter((s) => s.score >= RELATED_MIN || (s.appMatch && s.overlap))
     .sort((a, b) => b.score - a.score)
     .slice(0, limit);
 }
