@@ -9,9 +9,11 @@ export async function startMockOllama({
   reply = (body) => `Mock answer from ${body.model}.`,
   transcript = 'How do I log an issue?',
   thinking = 'Mock reasoning.',
+  thinkChunks = 1, // stream: thinking arrives in this many pieces...
+  thinkChunkMs = 0, // ...this far apart (to run past a thinking budget)
   toolCalls = null, // (body) => [{ function: { name, arguments } }] when the request offers tools
 } = {}) {
-  const state = { models: [...models], rejectThink, reply, transcript, thinking, toolCalls, calls: [] };
+  const state = { models: [...models], rejectThink, reply, transcript, thinking, thinkChunks, thinkChunkMs, toolCalls, calls: [] };
 
   const server = http.createServer(async (req, res) => {
     const chunks = [];
@@ -41,6 +43,27 @@ export async function startMockOllama({
         (m.images || []).some((b64) => Buffer.from(String(b64).slice(0, 24), 'base64').toString('latin1').startsWith('RIFF')),
       );
       const calls = body.tools?.length && state.toolCalls ? state.toolCalls(body) : null;
+      if (body.stream) {
+        // NDJSON like real Ollama: thinking pieces, then the answer or tool calls, then done.
+        res.on('error', () => {});
+        res.writeHead(200, { 'content-type': 'application/x-ndjson' });
+        const line = (message, done = false) => {
+          if (!res.destroyed) res.write(`${JSON.stringify({ model: body.model, message: { role: 'assistant', content: '', ...message }, done })}\n`);
+        };
+        if (body.think) {
+          const n = Math.max(1, state.thinkChunks);
+          const size = Math.ceil(state.thinking.length / n);
+          for (let i = 0; i < n; i += 1) {
+            if (state.thinkChunkMs) await new Promise((r) => setTimeout(r, state.thinkChunkMs));
+            if (res.destroyed) return undefined;
+            line({ thinking: state.thinking.slice(i * size, (i + 1) * size) });
+          }
+        }
+        if (calls?.length) line({ tool_calls: calls });
+        else line({ content: hasWav ? state.transcript : state.reply(body) });
+        line({}, true);
+        return res.end();
+      }
       if (calls?.length) {
         return send(200, { model: body.model, message: { role: 'assistant', content: '', tool_calls: calls }, done: true, done_reason: 'stop' });
       }

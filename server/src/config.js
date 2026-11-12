@@ -49,6 +49,8 @@ export function loadConfig(env = process.env, root = ROOT) {
     warmModel: str(env.GOAT_WARM, '1') !== '0',
     // auto: Gemma thinks (and may search) only when no SOP or guide covers the question.
     think: ['auto', 'off', 'always'].includes(str(env.GOAT_THINK, 'auto')) ? str(env.GOAT_THINK, 'auto') : 'auto',
+    // Gemma 4 reasons for 10-30 s; past this budget GOAT stops it and answers from its notes.
+    thinkBudgetMs: num(env.GOAT_THINK_BUDGET_MS, 1500),
     mcpConfig: path.resolve(root, str(env.GOAT_MCP_CONFIG, 'config/mcp.json')),
     payments: ['off', 'x402-local', 'x402'].includes(str(env.GOAT_PAYMENTS, 'x402-local')) ? str(env.GOAT_PAYMENTS, 'x402-local') : 'x402-local',
     network: str(env.X402_NETWORK, 'eip155:84532'),

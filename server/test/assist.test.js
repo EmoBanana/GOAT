@@ -376,3 +376,50 @@ describe('highlighted region asks', () => {
     }
   });
 });
+
+describe('thinking budget', () => {
+  const offTopic = 'How do I export a schedule from Revit?';
+
+  test('reasoning that runs past the budget is cut, and Gemma answers at once from its notes', async () => {
+    const ollama = await startMockOllama({
+      thinking: 'Revit schedules export from the File menu. Then pick Reports. Then Schedule. Then save as text. Then open in Excel.',
+      thinkChunks: 10,
+      thinkChunkMs: 100, // a full second of reasoning
+      reply: (body) => (body.think ? 'Thought-out answer.' : 'Quick answer from the notes.'),
+    });
+    const srv = await startTestServer({ ollamaUrl: ollama.url, env: { GOAT_THINK_BUDGET_MS: '250' } });
+    try {
+      const started = Date.now();
+      const r = await srv.request('POST', '/api/assist', { body: { question: offTopic } });
+      const took = Date.now() - started;
+      assert.equal(r.status, 200);
+      assert.equal(r.body.say, 'Quick answer from the notes.');
+      assert.equal(r.body.thought, true);
+      assert.ok(took < 900, `answered in ${took} ms, not after the whole second of reasoning`);
+      const [first, second] = ollama.chats();
+      assert.equal(first.body.think, true);
+      assert.equal(first.body.stream, true);
+      assert.equal(second.body.think, false);
+      assert.equal(second.body.stream, false);
+      assert.match(second.body.messages[1].content, /Your notes so far \(unfinished\):\nRevit schedules export/);
+      assert.doesNotMatch(second.body.messages[1].content, /open in Excel/, 'only what was thought before the cut');
+    } finally {
+      await srv.close();
+      await ollama.close();
+    }
+  });
+
+  test('reasoning that finishes inside the budget is used as is', async () => {
+    const ollama = await startMockOllama({ thinkChunks: 3, thinkChunkMs: 20, reply: () => 'Thought-out answer.' });
+    const srv = await startTestServer({ ollamaUrl: ollama.url, env: { GOAT_THINK_BUDGET_MS: '2000' } });
+    try {
+      const r = await srv.request('POST', '/api/assist', { body: { question: offTopic } });
+      assert.equal(r.body.say, 'Thought-out answer.');
+      assert.equal(r.body.thought, true);
+      assert.equal(ollama.chats().length, 1);
+    } finally {
+      await srv.close();
+      await ollama.close();
+    }
+  });
+});

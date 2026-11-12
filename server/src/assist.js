@@ -196,11 +196,20 @@ export function createAssist({ config, guides, docs, llm, mcp = null }) {
 
     let answer;
     let thought = false;
+    let thinking = deep;
     const searched = [];
-    for (let round = 0; ; round += 1) {
+    for (let round = 0; ; ) {
       const offerTools = tools.length > 0 && round < MAX_TOOL_ROUNDS;
-      const r = await chat({ think: deep, tools: offerTools ? tools : undefined });
+      const r = await chat({ think: thinking, tools: offerTools ? tools : undefined, thinkBudgetMs: thinking ? config.thinkBudgetMs : 0 });
       thought ||= Boolean(r.thinking);
+      if (r.cut) {
+        // Out of thinking time: answer straight away, with what Gemma had worked out as notes.
+        thinking = false;
+        const notes = r.thinking.trim().slice(-1500);
+        if (notes) messages[1].content += `\n\nYour notes so far (unfinished):\n${notes}\n\nAnswer now, in at most 3 short sentences.`;
+        continue;
+      }
+      round += 1;
       if (offerTools && r.toolCalls.length) {
         messages.push({ role: 'assistant', content: r.text || '', tool_calls: r.toolCalls });
         for (const call of r.toolCalls.slice(0, 2)) {

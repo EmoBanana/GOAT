@@ -21,6 +21,18 @@ function errorText(r) {
 }
 
 export function createOllama({ host, keepAlive = '30m', timeoutMs = 120_000, fetchImpl = globalThis.fetch }) {
+  function unavailable(err, timedOut, timeout = timeoutMs) {
+    const e = new HttpError(
+      503,
+      'model_unavailable',
+      timedOut
+        ? `The model took longer than ${Math.round(timeout / 1000)} s to answer. Try again in a moment.`
+        : `Can't reach Ollama at ${host}. Start it with: ollama serve`,
+    );
+    e.cause = err;
+    return e;
+  }
+
   async function post(path, body, timeout = timeoutMs) {
     let res;
     try {
@@ -31,16 +43,7 @@ export function createOllama({ host, keepAlive = '30m', timeoutMs = 120_000, fet
         signal: AbortSignal.timeout(timeout),
       });
     } catch (err) {
-      const timedOut = err?.name === 'TimeoutError' || err?.name === 'AbortError';
-      const e = new HttpError(
-        503,
-        'model_unavailable',
-        timedOut
-          ? `The model took longer than ${Math.round(timeout / 1000)} s to answer. Try again in a moment.`
-          : `Can't reach Ollama at ${host}. Start it with: ollama serve`,
-      );
-      e.cause = err;
-      throw e;
+      throw unavailable(err, err?.name === 'TimeoutError' || err?.name === 'AbortError', timeout);
     }
     const text = await res.text();
     let data = null;
@@ -60,15 +63,100 @@ export function createOllama({ host, keepAlive = '30m', timeoutMs = 120_000, fet
     throw new HttpError(502, 'model_error', `Ollama said: ${message}`, { model });
   }
 
-  // Non-streaming chat. think: false answers fast; true lets Gemma reason first. tools: Ollama
-  // function specs (from MCP servers). Older Ollama builds reject `think`, and some models
-  // reject tools: retry once without the offending field.
-  // format: a JSON schema for structured output (guide drafts).
-  async function chat({ model, messages, temperature = 0.3, think = false, tools, format }) {
+  // Thinking on a time budget. Gemma 4 reasons for 10-30 s whatever the think level, so stream
+  // the reply and, if it is still reasoning (no answer or tool call yet) when the budget runs
+  // out, stop it and hand back what it has thought so far with cut: true.
+  async function streamChat(body, model, budgetMs) {
+    const controller = new AbortController();
+    let cut = false;
+    let timedOut = false;
+    const overall = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, timeoutMs);
+    let res;
+    try {
+      res = await fetchImpl(`${host}/api/chat`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ...body, stream: true }),
+        signal: controller.signal,
+      });
+    } catch (err) {
+      clearTimeout(overall);
+      throw unavailable(err, timedOut);
+    }
+    if (!res.ok) {
+      clearTimeout(overall);
+      const text = await res.text();
+      let data = null;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        // keep the text
+      }
+      return { r: { status: res.status, ok: false, data, text } };
+    }
+    let thinking = '';
+    let content = '';
+    const toolCalls = [];
+    const budget = setTimeout(() => {
+      if (!content && !toolCalls.length) {
+        cut = true;
+        controller.abort();
+      }
+    }, budgetMs);
+    const take = (line) => {
+      if (!line.trim()) return;
+      let part;
+      try {
+        part = JSON.parse(line);
+      } catch {
+        return;
+      }
+      if (part.error) throw new HttpError(502, 'model_error', `Ollama said: ${part.error}`, { model });
+      const m = part.message || {};
+      if (m.thinking) thinking += m.thinking;
+      if (m.content) content += m.content;
+      if (Array.isArray(m.tool_calls)) toolCalls.push(...m.tool_calls);
+    };
+    try {
+      const decoder = new TextDecoder();
+      let buffer = '';
+      for await (const chunk of res.body) {
+        buffer += decoder.decode(chunk, { stream: true });
+        let nl;
+        while ((nl = buffer.indexOf('\n')) >= 0) {
+          take(buffer.slice(0, nl));
+          buffer = buffer.slice(nl + 1);
+        }
+      }
+      take(buffer); // a last line without a newline
+    } catch (err) {
+      if (!cut) throw err instanceof HttpError ? err : unavailable(err, timedOut);
+    } finally {
+      clearTimeout(budget);
+      clearTimeout(overall);
+    }
+    return { result: { text: stripThink(content), thinking, toolCalls, model, cut } };
+  }
+
+  // Chat. think: false answers fast; true lets Gemma reason first, and with thinkBudgetMs the
+  // reasoning is cut off at that budget (see streamChat). tools: Ollama function specs (from MCP
+  // servers). Older Ollama builds reject `think`, and some models reject tools: retry once
+  // without the offending field. format: a JSON schema for structured output (guide drafts).
+  async function chat({ model, messages, temperature = 0.3, think = false, tools, format, thinkBudgetMs = 0 }) {
     let body = { model, messages, stream: false, think, keep_alive: keepAlive, options: { temperature } };
     if (tools?.length) body.tools = tools;
     if (format) body.format = format;
-    let r = await post('/api/chat', body);
+    let r;
+    if (think && thinkBudgetMs > 0) {
+      const streamed = await streamChat(body, model, thinkBudgetMs);
+      if (streamed.result) return streamed.result;
+      r = streamed.r; // an error answer: handled below like any other
+    } else {
+      r = await post('/api/chat', body);
+    }
     if (r.status === 400 && /think/i.test(errorText(r))) {
       const { think: _think, ...rest } = body;
       body = rest;
