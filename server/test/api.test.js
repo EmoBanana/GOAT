@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
+import { DEFAULT_MODEL } from '../src/config.js';
 import { sanitizeUserId } from '../src/users.js';
 import { closedPortUrl, startMockOllama } from './helpers/mock-ollama.js';
 import { startTestServer } from './helpers/test-server.js';
@@ -8,7 +9,7 @@ describe('health, me and errors', () => {
   let ollama;
   let srv;
   before(async () => {
-    ollama = await startMockOllama({ models: ['gemma4:e2b', 'qwen2.5:3b'] });
+    ollama = await startMockOllama({ models: [DEFAULT_MODEL, 'qwen2.5:3b'] });
     srv = await startTestServer({ ollamaUrl: ollama.url });
   });
   after(async () => {
@@ -19,10 +20,10 @@ describe('health, me and errors', () => {
   test('GET /api/health reports models, Ollama, payments, guides and docs', async () => {
     const r = await srv.request('GET', '/api/health');
     assert.equal(r.status, 200);
-    assert.deepEqual(r.body.models, { base: 'gemma4:e2b', pro: 'gemma4:e4b', stt: 'gemma4:e2b' });
+    assert.deepEqual(r.body.models, { base: DEFAULT_MODEL, pro: DEFAULT_MODEL, stt: DEFAULT_MODEL });
     assert.equal(r.body.ollama.reachable, true);
     assert.equal(r.body.ollama.hasModel, true);
-    assert.deepEqual(r.body.ollama.models, ['gemma4:e2b', 'qwen2.5:3b']);
+    assert.deepEqual(r.body.ollama.models, [DEFAULT_MODEL, 'qwen2.5:3b']);
     assert.equal(r.body.payments.mode, 'x402-local');
     assert.ok(r.body.guides >= 2);
     assert.ok(r.body.docs.files >= 1 && r.body.docs.chunks > 0);
@@ -30,7 +31,7 @@ describe('health, me and errors', () => {
 
   test('GET /api/me uses the sanitised x-goat-user header', async () => {
     const me = await srv.request('GET', '/api/me', { user: 'site.engineer@example.com' });
-    assert.deepEqual(me.body, { id: 'site.engineer@example.com', tier: 'free', pro: false, proUntil: null, model: 'gemma4:e2b' });
+    assert.deepEqual(me.body, { id: 'site.engineer@example.com', tier: 'free', pro: false, proUntil: null, model: DEFAULT_MODEL });
     const bad = await srv.request('GET', '/api/me', { user: 'robert"); drop table' });
     assert.equal(bad.body.id, 'anonymous');
     const none = await srv.request('GET', '/api/me');

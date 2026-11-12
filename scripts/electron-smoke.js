@@ -8,6 +8,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import electronPath from 'electron';
 import { _electron as electron } from 'playwright';
+import { DEFAULT_MODEL } from '../server/src/config.js';
 import { startMockOllama } from '../server/test/helpers/mock-ollama.js';
 import { startTestServer } from '../server/test/helpers/test-server.js';
 
@@ -89,7 +90,7 @@ try {
     ollama.calls.length = 0;
     await askThroughMain('Why do issues need a photo?');
     await until(() => page.evaluate(() => /evidence/.test(document.getElementById('goat-bubble').innerText)), 'the answer bubble');
-    assert.match(await page.locator('#goat-bubble').innerText(), /gemma4:e2b · running on this laptop/);
+    assert.ok((await page.locator('#goat-bubble').innerText()).includes(`${DEFAULT_MODEL} · running on this laptop`));
     const [chat] = ollama.chats();
     assert.match(chat.body.messages[1].content, /App: Google Chrome/);
     assert.match(chat.body.messages[1].content, /Window: Forma Build - Issues/);

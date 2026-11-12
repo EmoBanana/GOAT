@@ -3,6 +3,11 @@ import { fileURLToPath } from 'node:url';
 
 export const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 
+// The Gemma 4 E4B build already on the demo Mac (text, images and audio). Pro and transcription
+// use it too unless set: gemma4:12b answers better, but a 16 GB Mac can't keep both loaded and
+// swapping models mid-demo costs seconds per answer.
+export const DEFAULT_MODEL = 'gemma4:e4b-it-qat';
+
 // .env values may carry trailing "# comments"; Node strips them, but be safe.
 function str(value, fallback) {
   const v = typeof value === 'string' ? value.replace(/\s+#.*$/, '').trim() : '';
@@ -30,14 +35,15 @@ export function normalizeOllamaHost(value) {
 }
 
 export function loadConfig(env = process.env, root = ROOT) {
+  const model = str(env.GOAT_MODEL, DEFAULT_MODEL);
   return {
     root,
     host: str(env.GOAT_HOST, '127.0.0.1'),
     port: num(env.GOAT_PORT, 8402),
     ollamaHost: normalizeOllamaHost(env.OLLAMA_HOST),
-    model: str(env.GOAT_MODEL, 'gemma4:e2b'),
-    modelPro: str(env.GOAT_MODEL_PRO, 'gemma4:e4b'),
-    sttModel: str(env.GOAT_STT_MODEL, 'gemma4:e2b'),
+    model,
+    modelPro: str(env.GOAT_MODEL_PRO, model),
+    sttModel: str(env.GOAT_STT_MODEL, model),
     keepAlive: str(env.OLLAMA_KEEP_ALIVE, '30m'),
     llmTimeoutMs: num(env.GOAT_LLM_TIMEOUT_MS, 120_000),
     warmModel: str(env.GOAT_WARM, '1') !== '0',

@@ -16,7 +16,7 @@ before(async () => {
     res.setHeader('content-type', 'application/json');
     if (req.url === '/api/assist' && seen.at(-1).body.question === 'boom') {
       res.statusCode = 503;
-      return res.end(JSON.stringify({ error: 'model_missing', message: 'Run: ollama pull gemma4:e2b', model: 'gemma4:e2b' }));
+      return res.end(JSON.stringify({ error: 'model_missing', message: 'Run: ollama pull gemma4:e4b-it-qat', model: 'gemma4:e4b-it-qat' }));
     }
     if (req.url === '/api/slow') return setTimeout(() => res.end('{}'), 500);
     res.end(JSON.stringify({ ok: true, path: req.url }));
@@ -40,9 +40,9 @@ test('server errors come back as { error, message, status } instead of throwing'
   const api = createApi({ baseUrl, userId: 'x' });
   const reply = await api.assist({ question: 'boom' });
   assert.equal(reply.error, 'model_missing');
-  assert.equal(reply.message, 'Run: ollama pull gemma4:e2b');
+  assert.equal(reply.message, 'Run: ollama pull gemma4:e4b-it-qat');
   assert.equal(reply.status, 503);
-  assert.equal(reply.model, 'gemma4:e2b');
+  assert.equal(reply.model, 'gemma4:e4b-it-qat');
 });
 
 test('an unreachable server or a timeout is a friendly error', async () => {

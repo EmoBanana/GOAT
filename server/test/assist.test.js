@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, test } from 'node:test';
+import { DEFAULT_MODEL } from '../src/config.js';
 import { closedPortUrl, startMockOllama } from './helpers/mock-ollama.js';
 import { startTestServer } from './helpers/test-server.js';
 
@@ -39,13 +40,13 @@ describe('POST /api/assist', () => {
     const r = await srv.request('POST', '/api/assist', { body: { question: 'Why do issues need a photo?', context: inForma } });
     assert.equal(r.status, 200);
     assert.equal(r.body.source, 'llm');
-    assert.equal(r.body.say, 'Mock answer from gemma4:e2b.');
-    assert.equal(r.body.model, 'gemma4:e2b');
+    assert.equal(r.body.say, `Mock answer from ${DEFAULT_MODEL}.`);
+    assert.equal(r.body.model, DEFAULT_MODEL);
     assert.equal(r.body.guide, null);
     assert.ok(r.body.sources.some((s) => s.type === 'doc' && s.file === 'sop-site-issues.md'));
 
     const [call] = ollama.chats();
-    assert.equal(call.body.model, 'gemma4:e2b');
+    assert.equal(call.body.model, DEFAULT_MODEL);
     assert.equal(call.body.think, false);
     assert.equal(call.body.stream, false);
     assert.equal(call.body.keep_alive, '30m');
@@ -85,17 +86,21 @@ describe('POST /api/assist', () => {
 });
 
 describe('model problems', () => {
-  test('Pro tries gemma4:e4b, then falls back to gemma4:e2b', async () => {
-    const ollama = await startMockOllama({ models: ['gemma4:e2b'] });
-    const srv = await startTestServer({ ollamaUrl: ollama.url, users: { pat: { id: 'pat', proUntil: Date.now() + 86_400_000 } } });
+  test('Pro tries GOAT_MODEL_PRO, then falls back to the base model when it is not pulled', async () => {
+    const ollama = await startMockOllama({ models: [DEFAULT_MODEL] });
+    const srv = await startTestServer({
+      ollamaUrl: ollama.url,
+      env: { GOAT_MODEL_PRO: 'gemma4:12b' },
+      users: { pat: { id: 'pat', proUntil: Date.now() + 86_400_000 } },
+    });
     try {
       const r = await srv.request('POST', '/api/assist', { user: 'pat', body: { question: 'Why do issues need a photo?' } });
       assert.equal(r.status, 200);
       assert.equal(r.body.tier, 'pro');
-      assert.equal(r.body.model, 'gemma4:e2b');
+      assert.equal(r.body.model, DEFAULT_MODEL);
       assert.deepEqual(
         ollama.chats().map((c) => c.body.model),
-        ['gemma4:e4b', 'gemma4:e2b'],
+        ['gemma4:12b', DEFAULT_MODEL],
       );
     } finally {
       await srv.close();
@@ -103,16 +108,30 @@ describe('model problems', () => {
     }
   });
 
-  test('Pro uses gemma4:e4b when it is pulled; expired Pro is free', async () => {
-    const ollama = await startMockOllama({ models: ['gemma4:e2b', 'gemma4:e4b'] });
+  test('Pro uses GOAT_MODEL_PRO when it is pulled; expired Pro is free', async () => {
+    const ollama = await startMockOllama({ models: [DEFAULT_MODEL, 'gemma4:12b'] });
     const users = { pat: { id: 'pat', proUntil: Date.now() + 86_400_000 }, old: { id: 'old', proUntil: Date.now() - 1000 } };
-    const srv = await startTestServer({ ollamaUrl: ollama.url, users });
+    const srv = await startTestServer({ ollamaUrl: ollama.url, env: { GOAT_MODEL_PRO: 'gemma4:12b' }, users });
     try {
       const pro = await srv.request('POST', '/api/assist', { user: 'pat', body: { question: 'Explain issue types' } });
-      assert.equal(pro.body.model, 'gemma4:e4b');
+      assert.equal(pro.body.model, 'gemma4:12b');
       const expired = await srv.request('POST', '/api/assist', { user: 'old', body: { question: 'Explain issue types' } });
       assert.equal(expired.body.tier, 'free');
-      assert.equal(expired.body.model, 'gemma4:e2b');
+      assert.equal(expired.body.model, DEFAULT_MODEL);
+    } finally {
+      await srv.close();
+      await ollama.close();
+    }
+  });
+
+  test('by default Pro uses the same local model and asks it once', async () => {
+    const ollama = await startMockOllama();
+    const srv = await startTestServer({ ollamaUrl: ollama.url, users: { pat: { id: 'pat', proUntil: Date.now() + 86_400_000 } } });
+    try {
+      const r = await srv.request('POST', '/api/assist', { user: 'pat', body: { question: 'Explain issue types' } });
+      assert.equal(r.body.tier, 'pro');
+      assert.equal(r.body.model, DEFAULT_MODEL);
+      assert.equal(ollama.chats().length, 1);
     } finally {
       await srv.close();
       await ollama.close();
@@ -142,8 +161,8 @@ describe('model problems', () => {
       const r = await srv.request('POST', '/api/assist', { body: { question: 'Why do issues need a photo?' } });
       assert.equal(r.status, 503);
       assert.equal(r.body.error, 'model_missing');
-      assert.match(r.body.message, /Run: ollama pull gemma4:e2b/);
-      assert.equal(r.body.model, 'gemma4:e2b');
+      assert.ok(r.body.message.includes(`Run: ollama pull ${DEFAULT_MODEL}`), r.body.message);
+      assert.equal(r.body.model, DEFAULT_MODEL);
     } finally {
       await srv.close();
       await ollama.close();

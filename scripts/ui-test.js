@@ -17,8 +17,8 @@ const STEPS = [
   { x: 640, y: 620, label: 'Three', say: 'And finish here.' },
 ];
 const GUIDE_REPLY = { id: 'r1', source: 'guide', say: 'Three quick steps.', model: null, tier: 'free', sources: [], guide: { id: 'ui-guide', title: 'UI guide', intro: 'Three quick steps.', steps: STEPS } };
-const LLM_REPLY = { id: 'r2', source: 'llm', say: 'Photos are the evidence for every issue.', model: 'gemma4:e2b', tier: 'free', guide: null, sources: [] };
-const ERROR_REPLY = { error: 'model_missing', message: "The model gemma4:e2b isn't pulled yet. Run: ollama pull gemma4:e2b", status: 503 };
+const LLM_REPLY = { id: 'r2', source: 'llm', say: 'Photos are the evidence for every issue.', model: 'gemma4:e4b-it-qat', tier: 'free', guide: null, sources: [] };
+const ERROR_REPLY = { error: 'model_missing', message: "The model gemma4:e4b-it-qat isn't pulled yet. Run: ollama pull gemma4:e4b-it-qat", status: 503 };
 
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
@@ -214,14 +214,14 @@ await check('dwell: hovering within 28 px for 450 ms advances, and finishes the 
   await until(async () => near(await tip(), { x: STEPS[2].x + 14, y: STEPS[2].y - 20 + 16 }, 0.5), 'the cursor back beside the system cursor');
 });
 
-await check('LLM reply: answer bubble with "gemma4:e2b · running on this laptop"', async () => {
+await check('LLM reply: answer bubble with "<model> · running on this laptop"', async () => {
   await setReply('ask', LLM_REPLY);
   await askVia('why do issues need a photo?');
   const b = await until(async () => {
     const x = await bubble();
     return x.visible && /evidence/.test(x.text) && x;
   }, 'the answer bubble');
-  assert.match(b.text, /gemma4:e2b · running on this laptop/);
+  assert.match(b.text, /gemma4:e4b-it-qat · running on this laptop/);
   assert.match(b.className, /\banswer\b/);
   await shot('ui-04-llm');
 });

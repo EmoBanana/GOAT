@@ -1,9 +1,10 @@
 import http from 'node:http';
+import { DEFAULT_MODEL } from '../../src/config.js';
 
 // A stand-in for Ollama with the same response shapes as the real thing (checked on 0.32.4):
 // 404 {"error":"model 'x' not found"} for unknown models, 400 "... does not support thinking".
 export async function startMockOllama({
-  models = ['gemma4:e2b'],
+  models = [DEFAULT_MODEL],
   rejectThink = false,
   reply = (body) => `Mock answer from ${body.model}.`,
   transcript = 'How do I log an issue?',
