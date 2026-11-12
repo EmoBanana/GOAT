@@ -1,0 +1,65 @@
+{
+  "id": "add-company",
+  "title": "Add company",
+  "intro": "To add company",
+  "triggers": [
+    "add company"
+  ],
+  "apps": [
+    "Microsoft Edge"
+  ],
+  "steps": [
+    {
+      "x": 156,
+      "y": 193,
+      "label": "Cost Management",
+      "say": "Click on module selection",
+      "target": {
+        "label": "Cost Management",
+        "role": "button"
+      }
+    },
+    {
+      "x": 166,
+      "y": 457,
+      "label": "Project Admin",
+      "say": "Click and select project admin",
+      "target": {
+        "label": "Project Admin",
+        "role": "menuitem"
+      }
+    },
+    {
+      "x": 138,
+      "y": 283,
+      "label": "Companies",
+      "say": "Click and select companies",
+      "target": {
+        "label": "Companies",
+        "role": "div"
+      }
+    },
+    {
+      "x": 359,
+      "y": 357,
+      "label": "Add company",
+      "say": "Click to add company",
+      "target": {
+        "label": "Add company",
+        "role": "button"
+      }
+    },
+    {
+      "x": 1079,
+      "y": 446,
+      "label": "Name *",
+      "say": "Fill in details",
+      "target": {
+        "label": "Name *",
+        "role": "combobox"
+      }
+    }
+  ],
+  "recordedOn": "1710x1107",
+  "createdAt": 1794510237166
+}

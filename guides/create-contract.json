@@ -1,0 +1,51 @@
+{
+  "id": "create-contract",
+  "title": "Create contract",
+  "intro": "To create a contract",
+  "triggers": [
+    "create contract"
+  ],
+  "apps": [
+    "Microsoft Edge"
+  ],
+  "steps": [
+    {
+      "x": 74,
+      "y": 332,
+      "label": "Cost",
+      "say": "Click and navigate to cost module",
+      "target": {
+        "label": "Cost",
+        "role": "link"
+      }
+    },
+    {
+      "x": 342,
+      "y": 368,
+      "label": "Edit mode",
+      "say": "Click to enable edit mode",
+      "target": {
+        "label": "Edit mode",
+        "role": "button"
+      }
+    },
+    {
+      "x": 463,
+      "y": 365,
+      "label": "Add",
+      "say": "Click to add contract",
+      "target": {
+        "label": "Add",
+        "role": "button"
+      }
+    },
+    {
+      "x": 394,
+      "y": 499,
+      "label": "Fill",
+      "say": "Fill in details to create the contract"
+    }
+  ],
+  "recordedOn": "1710x1107",
+  "createdAt": 1794510007185
+}

@@ -7,8 +7,10 @@ import { buildServer, listen } from '../../src/server.js';
 
 export const quietLogger = { log() {}, warn() {}, error() {} };
 
-// Tests run against the shipped guides only, never the ones recorded on this Mac.
-export const SHIPPED_GUIDES = ['forma-log-issue.json', 'pitch-deck-tour.json'];
+// Tests run against the sample guides in fixtures/guides only, never the ones in guides/, which
+// hold the guides recorded on the demo Mac and change with it.
+export const SAMPLE_GUIDES_DIR = path.join(ROOT, 'server', 'test', 'fixtures', 'guides');
+export const SAMPLE_GUIDES = ['forma-log-issue.json', 'pitch-deck-tour.json'];
 
 // Builds a real server on a random port with temp guide and data dirs.
 // Options: ollamaUrl, env, users (data/users.json contents), setupGuides(dir), logger,
@@ -17,7 +19,7 @@ export async function startTestServer({ ollamaUrl, env = {}, users, setupGuides,
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'goat-test-'));
   const guidesDir = path.join(tmp, 'guides');
   fs.mkdirSync(guidesDir, { recursive: true });
-  for (const file of SHIPPED_GUIDES) fs.copyFileSync(path.join(ROOT, 'guides', file), path.join(guidesDir, file));
+  for (const file of SAMPLE_GUIDES) fs.copyFileSync(path.join(SAMPLE_GUIDES_DIR, file), path.join(guidesDir, file));
   if (setupGuides) setupGuides(guidesDir);
   const dataDir = path.join(tmp, 'data');
   fs.mkdirSync(dataDir, { recursive: true });

@@ -20,7 +20,7 @@ const CUP = {
   steam: 'M25 15.5 c-2.6 -2.6 2.6 -4.6 0 -7.6 M33.5 15.5 c-2.6 -2.6 2.6 -4.6 0 -7.6',
 };
 const INTRO = 'Let’s log an issue in Forma Build, following the site QA procedure.';
-// guides/forma-log-issue.json, the guide GOAT ships with.
+// The sample Forma guide, kept as a test fixture: server/test/fixtures/guides/forma-log-issue.json.
 const STEPS = [
   { target: 'issues', say: 'Open Issues from the left menu.' },
   { target: 'create', say: 'Click Create issue at the top right.' },
