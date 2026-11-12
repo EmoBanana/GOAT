@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sampleActiveWindow } from './lib/active-window.js';
 import { captureRegion } from './lib/capture.js';
+import { startHoldKeys } from './lib/hold-keys.js';
 import { validRegion } from './lib/region.js';
 import { createApi } from './lib/api.js';
 import { getUserId } from './lib/identity.js';
@@ -51,6 +52,7 @@ let cursorTimer = null;
 let lastCursor = null;
 let askContext = {};
 let askOpening = false;
+let holdKeys = null;
 let streamPaused = false; // test hooks drive the cursor instead
 
 const log = (...args) => console.log('[goat]', ...args);
@@ -218,19 +220,54 @@ async function openTimesheet() {
 
 // Ctrl+Option+V: start listening; press again to send (Pro). The renderer records; main
 // checks the microphone permission and reads the frontmost window for the ask context.
-async function toggleVoice() {
-  if (!win) return;
-  if (isMac && process.env.GOAT_FAKE_MEDIA !== '1' && systemPreferences.getMediaAccessStatus('microphone') !== 'granted') {
-    const allowed = await systemPreferences.askForMediaAccess('microphone');
-    if (!allowed) {
-      send({ type: 'voice-error', message: 'GOAT needs the microphone for voice mode. Allow it in System Settings > Privacy & Security > Microphone.' });
-      return;
-    }
+// Voice (Pro): hold Option+Cmd to talk and let go to send (Ctrl+Option+V toggles the same).
+// Letting go also reads the screen around the pointer, so "what's this?" has context. That
+// picture goes with this one question and is never stored. It's skipped unless Screen
+// Recording is already allowed (voice never asks for it) or when GOAT_VOICE_SCREEN=off.
+let voiceDown = false;
+let voiceScreen = null; // Promise<{ image, region } | null> for the question being asked
+
+async function captureVoiceScreen() {
+  const fake = process.env.GOAT_FAKE_CAPTURE === '1';
+  if (process.env.GOAT_VOICE_SCREEN === 'off') return null;
+  if (!fake && isMac && systemPreferences.getMediaAccessStatus('screen') !== 'granted') return null;
+  const p = screen.getCursorScreenPoint();
+  const d = screen.getDisplayNearestPoint(p).bounds;
+  const width = Math.min(1280, d.width);
+  const height = Math.min(800, d.height);
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  const region = { x: clamp(Math.round(p.x - width / 2), d.x, d.x + d.width - width), y: clamp(Math.round(p.y - height / 2), d.y, d.y + d.height - height), width, height };
+  try {
+    return { image: await captureRegion(region, { win, fake }), region };
+  } catch (err) {
+    log(`voice screen skipped: ${err.message}`);
+    return null;
   }
-  const sample = await sampleActiveWindow({ timeoutMs: 700 });
-  if (sample && !isSelf(sample)) askContext = { app: sample.app, title: sample.title, url: sample.url || '' };
-  send({ type: 'voice-toggle' });
 }
+
+async function voiceHold(down) {
+  if (!win || down === voiceDown) return;
+  voiceDown = down;
+  if (down) {
+    if (isMac && process.env.GOAT_FAKE_MEDIA !== '1' && systemPreferences.getMediaAccessStatus('microphone') !== 'granted') {
+      const allowed = await systemPreferences.askForMediaAccess('microphone');
+      if (!allowed) {
+        voiceDown = false;
+        send({ type: 'voice-error', message: 'GOAT needs the microphone for voice mode. Allow it in System Settings > Privacy & Security > Microphone.' });
+        return;
+      }
+    }
+    voiceScreen = null;
+    send({ type: 'voice-hold', down: true });
+    const sample = await sampleActiveWindow({ timeoutMs: 700 });
+    if (sample && !isSelf(sample)) askContext = { app: sample.app, title: sample.title, url: sample.url || '' };
+  } else {
+    send({ type: 'voice-hold', down: false }); // stop recording first, then look at the screen
+    voiceScreen = captureVoiceScreen();
+  }
+}
+
+const toggleVoice = () => voiceHold(!voiceDown);
 
 function captureStep(point) {
   if (!recorder.recording) return;
@@ -261,7 +298,7 @@ function registerIpc() {
     serverUrl,
     userId,
     platform: process.platform,
-    hotkeys: { ask: hotkey('G'), record: hotkey('R'), capture: hotkey('C'), track: hotkey('T'), voice: hotkey('V') },
+    hotkeys: { ask: hotkey('G'), record: hotkey('R'), capture: hotkey('C'), track: hotkey('T'), voice: hotkey('V'), talk: isMac ? 'Option+Cmd' : hotkey('V') },
   }));
   ipcMain.handle('goat:timesheet', (event, date) => (fromOverlay(event) ? api.timesheet(dateOrToday(date)) : { error: 'forbidden' }));
   ipcMain.handle('goat:approve-timesheet', (event, date) => (fromOverlay(event) ? api.approveTimesheet(dateOrToday(date)) : { error: 'forbidden' }));
@@ -306,7 +343,14 @@ function registerIpc() {
         return { error: err.code || 'capture_failed', message: err.message };
       }
     }
-    const reply = await api.assist({ question, context: region ? { ...askContext, region } : askContext, image });
+    // A voice question carries the screen around the pointer, read when the user let go.
+    let screenShot = null;
+    if (payload?.voice === true && voiceScreen) {
+      screenShot = await voiceScreen;
+      voiceScreen = null;
+    }
+    const context = region ? { ...askContext, region } : screenShot ? { ...askContext, region: screenShot.region } : askContext;
+    const reply = await api.assist({ question, context, image, screen: screenShot?.image, voice: payload?.voice === true });
     log(reply.error ? `ask failed: ${reply.error}` : `ask -> ${reply.source}${reply.guide ? ` (${reply.guide.id})` : ''} in ${reply.latencyMs} ms`);
     return reply;
   });
@@ -333,7 +377,7 @@ function registerHotkeys() {
 function trayMenu() {
   return Menu.buildFromTemplate([
     { label: `Ask GOAT (${hotkey('G')})`, click: () => openAsk('tray') },
-    { label: `Voice question, Pro (${hotkey('V')})`, click: () => toggleVoice() },
+    { label: `Voice question, Pro (hold ${isMac ? 'Option+Cmd' : hotkey('V')})`, click: () => toggleVoice() },
     recorder.recording
       ? { label: `Stop recording (${hotkey('R')})`, click: () => toggleRecording() }
       : { label: `Record a guide (${hotkey('R')})`, click: () => toggleRecording() },
@@ -371,6 +415,8 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(async () => {
     if (isMac) app.dock?.hide();
     await setUpWallet();
+    // Hold Option+Cmd to talk (GOAT_PTT=off turns the helper off; Ctrl+Option+V still works).
+    if (isMac && process.env.GOAT_PTT !== 'off') holdKeys = startHoldKeys({ onDown: () => voiceHold(true), onUp: () => voiceHold(false) });
     registerIpc();
     createWindow();
     createTray();
@@ -387,6 +433,7 @@ if (!app.requestSingleInstanceLock()) {
         recording: () => ({ recording: recorder.recording, steps: recorder.steps, app: recorder.app }),
         toggleTracking: () => toggleTracking(),
         toggleVoice: () => toggleVoice(),
+        voiceHold: (down) => voiceHold(down),
         openDraft: () => openDraft(),
         tracking: () => ({ tracking: tracker.tracking, queued: tracker.queued }),
         wallet: () => api.wallet(),
@@ -412,6 +459,9 @@ if (!app.requestSingleInstanceLock()) {
     flushedOnQuit = true;
     tracker.stop().finally(() => app.quit());
   });
-  app.on('will-quit', () => globalShortcut.unregisterAll());
+  app.on('will-quit', () => {
+    globalShortcut.unregisterAll();
+    holdKeys?.stop();
+  });
   app.on('window-all-closed', () => app.quit());
 }

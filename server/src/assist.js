@@ -129,17 +129,31 @@ function toolArgs(call) {
   }
 }
 
+// Spoken questions get spoken answers: short, plain, easy to follow by ear.
+export const VOICE_PROMPT = [
+  'This question was spoken aloud and your answer will be read out.',
+  'Answer in one or two short sentences written for listening, with no lists, symbols or code.',
+  'When it helps, end with the next thing the user can do.',
+].join(' ');
+
+const SCREEN_NOTE = (region) =>
+  `This picture shows the user's screen around their mouse pointer${regionNote(region)}. Use it when the question is about something on screen ("this", "here").`;
+
 // The "server decides" router: a verified guide when one matches, otherwise Gemma.
 // Gemma answers fast when the SOPs or guides cover the question (or it's small talk), and
 // thinks first, with MCP tools such as web search, when nothing relevant was found.
-export function createAssist({ config, guides, docs, llm, mcp = null }) {
-  return async function assist({ question, context, tier = 'free', image }) {
+// image: a highlighted region (always goes to Gemma). screen: the area around the pointer sent
+// with a voice question (context only; guides still win). memory: recent exchanges, so
+// follow-ups ("and then?") make sense.
+export function createAssist({ config, guides, docs, llm, mcp = null, memory = null }) {
+  return async function assist({ question, context, tier = 'free', image, screen, voice = false, userId = 'anonymous' }) {
     const started = Date.now();
     const q = typeof question === 'string' ? question.trim() : '';
     if (!q) throw new HttpError(400, 'empty_question', 'Ask me something first.');
     if (q.length > 1000) throw new HttpError(400, 'question_too_long', 'Keep the question under 1,000 characters.');
     const ctx = cleanContext(context);
     const picture = image === undefined || image === null || image === '' ? null : checkImage(image);
+    const view = picture || screen === undefined || screen === null || screen === '' ? null : checkImage(screen);
     const base = { id: crypto.randomUUID(), tier };
 
     // A highlighted region always goes to the model: it's a question about what's on screen.
@@ -147,6 +161,7 @@ export function createAssist({ config, guides, docs, llm, mcp = null }) {
       const hit = matchGuide(q, guides.list(), ctx);
       if (hit) {
         const g = hit.guide;
+        memory?.add(userId, q, `(GOAT played the guide "${g.title}".)`);
         return {
           ...base,
           source: 'guide',
@@ -163,18 +178,23 @@ export function createAssist({ config, guides, docs, llm, mcp = null }) {
     const smallTalk = !picture && isSmallTalk(q);
     const found = smallTalk ? { text: '', sources: [], relevant: true } : buildContext({ question: q, context: ctx, docs, guides });
     const mode = config.think || 'auto';
-    // Screen contents never go to web tools, and region asks stay quick unless thinking is always on.
+    // Region asks stay quick unless thinking is always on.
     const deep = picture ? mode === 'always' : !smallTalk && (mode === 'always' || (mode === 'auto' && !found.relevant));
-    const tools = deep && !picture && mcp ? await mcp.tools() : [];
+    // Screen contents never go anywhere near web tools.
+    const tools = deep && !picture && !view && mcp ? await mcp.tools() : [];
 
-    const system = [SYSTEM_PROMPT, deep && DEEP_PROMPT, tools.length && TOOLS_PROMPT].filter(Boolean).join(' ');
+    const system = [SYSTEM_PROMPT, voice && VOICE_PROMPT, deep && DEEP_PROMPT, tools.length && TOOLS_PROMPT].filter(Boolean).join(' ');
     const userText = smallTalk ? q : userMessage(q, ctx, found.text, { hideWindow: tools.length > 0 });
-    const messages = [
-      { role: 'system', content: system },
-      picture
-        ? { role: 'user', content: `The user highlighted this part of the screen${regionNote(context?.region)}. The image shows it.\n\n${userText}`, images: [picture] }
-        : { role: 'user', content: userText },
-    ];
+    const current = picture
+      ? { role: 'user', content: `The user highlighted this part of the screen${regionNote(context?.region)}. The image shows it.\n\n${userText}`, images: [picture] }
+      : view
+        ? { role: 'user', content: `${SCREEN_NOTE(context?.region)}\n\n${userText}`, images: [view] }
+        : { role: 'user', content: userText };
+    const history = (memory?.recent(userId) || []).flatMap((t) => [
+      { role: 'user', content: t.question },
+      { role: 'assistant', content: t.answer },
+    ]);
+    const messages = [{ role: 'system', content: system }, ...history, current];
 
     // Pro tries its model first and falls back to the base model if it isn't pulled.
     const candidates = tier === 'pro' && config.modelPro && config.modelPro !== config.model ? [config.modelPro, config.model] : [config.model];
@@ -206,7 +226,7 @@ export function createAssist({ config, guides, docs, llm, mcp = null }) {
         // Out of thinking time: answer straight away, with what Gemma had worked out as notes.
         thinking = false;
         const notes = r.thinking.trim().slice(-1500);
-        if (notes) messages[1].content += `\n\nYour notes so far (unfinished):\n${notes}\n\nAnswer now, in at most 3 short sentences.`;
+        if (notes) current.content += `\n\nYour notes so far (unfinished):\n${notes}\n\nAnswer now, in at most 3 short sentences.`;
         continue;
       }
       round += 1;
@@ -231,15 +251,18 @@ export function createAssist({ config, guides, docs, llm, mcp = null }) {
       .filter((url) => !seen.has(url) && seen.add(url))
       .slice(0, 3)
       .map((url) => ({ type: 'web', url }));
+    const say = plainText(answer.text) || "Sorry, I couldn't come up with an answer. Try asking another way.";
+    memory?.add(userId, q, say);
 
     return {
       ...base,
       source: 'llm',
-      say: plainText(answer.text) || "Sorry, I couldn't come up with an answer. Try asking another way.",
+      say,
       guide: null,
       model,
       thought,
       image: Boolean(picture),
+      screen: Boolean(view),
       searched: searched.map(({ tool, query }) => ({ tool, query })),
       sources: [...found.sources, ...web],
       latencyMs: Date.now() - started,

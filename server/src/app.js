@@ -63,13 +63,13 @@ export function createApp({ config, guides, docs, llm, users, assist, mcp, proje
   });
 
   app.post('/api/assist', async (req, res) => {
-    const { question, context, image } = req.body || {};
-    res.json(await assist({ question, context, image, tier: users.tier(req.userId), userId: req.userId }));
+    const { question, context, image, screen, voice } = req.body || {};
+    res.json(await assist({ question, context, image, screen, voice: voice === true, tier: users.tier(req.userId), userId: req.userId }));
   });
 
   if (projects && activity) mountTimesheet(app, { projects, activity });
   mountWallet(app, { config, users, payments, topups });
-  mountVoice(app, { config, users, llm });
+  mountVoice(app, { config, users, llm, projects });
 
   app.use('/api', (req) => {
     throw new HttpError(404, 'not_found', `No route for ${req.method} ${req.originalUrl}.`);

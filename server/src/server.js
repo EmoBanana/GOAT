@@ -5,6 +5,7 @@ import { createDocs } from './docs.js';
 import { createGuideStore } from './guides/store.js';
 import { createOllama } from './llm/ollama.js';
 import { createMcpHub } from './mcp/hub.js';
+import { createMemory } from './memory.js';
 import { createPayments, createTopups } from './payments/index.js';
 import { createActivityStore } from './timesheet/activity.js';
 import { loadProjects } from './timesheet/projects.js';
@@ -19,7 +20,8 @@ export async function buildServer(config, overrides = {}) {
     overrides.llm ?? createOllama({ host: config.ollamaHost, keepAlive: config.keepAlive, timeoutMs: config.llmTimeoutMs });
   const users = overrides.users ?? createUsers({ dataDir: config.dataDir, logger });
   const mcp = overrides.mcp ?? createMcpHub({ file: config.mcpConfig, env: process.env, logger });
-  const assist = overrides.assist ?? createAssist({ config, guides, docs, llm, mcp });
+  const memory = overrides.memory ?? createMemory();
+  const assist = overrides.assist ?? createAssist({ config, guides, docs, llm, mcp, memory });
   const projects = overrides.projects ?? loadProjects(config.projectsFile);
   const activity = overrides.activity ?? createActivityStore({ dataDir: config.dataDir });
   const payments = overrides.payments !== undefined ? overrides.payments : createPayments({ config, users, logger });

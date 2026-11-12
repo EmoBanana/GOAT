@@ -55,11 +55,12 @@ async function until(fn, what, timeout = 8000) {
 let app;
 const pageErrors = [];
 try {
-  // Fake media devices so voice mode records a synthetic stream without a microphone prompt.
+  // Fake media devices, so nothing asks for the microphone. The voice check below plays a spoken
+  // question into the page itself (Electron's fake audio file input stays silent; see Gotchas).
   app = await electron.launch({
     executablePath: electronPath,
-    args: [root, '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'],
-    env: { ...env, GOAT_FAKE_MEDIA: '1' },
+    args: [root, '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--autoplay-policy=no-user-gesture-required'],
+    env: { ...env, GOAT_FAKE_MEDIA: '1', GOAT_PTT: 'off' }, // the hold helper needs a real keyboard
     timeout: 30_000,
   });
   app.process().stderr?.on('data', (d) => process.stderr.write(`[app] ${d}`));
@@ -102,8 +103,8 @@ try {
     await until(() => page.evaluate(() => /evidence/.test(document.getElementById('goat-bubble').innerText)), 'the answer bubble');
     assert.ok((await page.locator('#goat-bubble').innerText()).includes(`${DEFAULT_MODEL} · running on this laptop`));
     const [chat] = ollama.chats();
-    assert.match(chat.body.messages[1].content, /App: Google Chrome/);
-    assert.match(chat.body.messages[1].content, /Window: Forma Build - Issues/);
+    assert.match(chat.body.messages.at(-1).content, /App: Google Chrome/);
+    assert.match(chat.body.messages.at(-1).content, /Window: Forma Build - Issues/);
     await page.screenshot({ path: path.join(artifacts, 'electron-llm.png') });
   });
 
@@ -165,8 +166,8 @@ try {
     await page.keyboard.press('Enter');
     await until(() => page.evaluate(() => /read the highlighted area/.test(document.getElementById('goat-bubble').innerText)), 'the answer about the area');
     const [chat] = ollama.chats();
-    assert.equal(chat.body.messages[1].images.length, 1);
-    assert.match(chat.body.messages[1].content, /highlighted this part of the screen \(200×150 points\)/);
+    assert.equal(chat.body.messages.at(-1).images.length, 1);
+    assert.match(chat.body.messages.at(-1).content, /highlighted this part of the screen \(200×150 points\)/);
   });
 
   await check('tracking samples allowlisted windows; stopping shows and approves the timesheet', async () => {
@@ -211,21 +212,54 @@ try {
     await page.click('[data-action="close"]');
   });
 
-  await check('voice mode (Pro): record, transcribe through main and Gemma, then ask', async () => {
+  await check('voice (Pro): hold to talk, transcribe through main, play a guide; a screen question carries the screen', async () => {
+    // The microphone hears a recorded "how do I log an issue" on a loop; the rest of the
+    // pipeline (capture, speech check, 16 kHz WAV, main, server) is the real one.
+    const wav = fs.readFileSync(path.join(root, 'scripts', 'fixtures', 'question.wav')).toString('base64');
+    await page.evaluate(async (b64) => {
+      const ctx = new AudioContext();
+      await ctx.resume();
+      const source = ctx.createBufferSource();
+      source.buffer = await ctx.decodeAudioData(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)).buffer);
+      source.loop = true;
+      const out = ctx.createMediaStreamDestination();
+      source.connect(out);
+      source.start();
+      navigator.mediaDevices.getUserMedia = async () => out.stream.clone();
+    }, wav);
     ollama.calls.length = 0;
-    await app.evaluate(() => globalThis.__goatTest.toggleVoice());
-    await until(() => page.evaluate(() => document.getElementById('goat-cursor').classList.contains('listening')), 'listening');
-    await sleep(1200);
-    await app.evaluate(() => globalThis.__goatTest.toggleVoice());
-    await until(
-      () => page.evaluate(() => window.GOATUI.state().guide?.id === 'forma-log-issue' && window.GOATUI.state().guide.landed),
-      'the transcript "How do I log an issue?" to play the guide',
-      15_000,
-    );
-    const audioCall = ollama.chats().find((c) => c.body.messages?.[0]?.images?.length);
+    ollama.state.transcript = 'How do I log an issue?';
+    await app.evaluate(() => globalThis.__goatTest.voiceHold(true));
+    await until(() => page.evaluate(() => document.getElementById('goat-cursor').dataset.voice === 'listening'), 'listening');
+    await sleep(1500);
+    await app.evaluate(() => globalThis.__goatTest.voiceHold(false));
+    try {
+      await until(
+        () => page.evaluate(() => window.GOATUI.state().guide?.id === 'forma-log-issue' && window.GOATUI.state().guide.landed),
+        'the transcript "How do I log an issue?" to play the guide',
+        15_000,
+      );
+    } catch (err) {
+      const seen = await page.evaluate(() => ({ bubble: document.getElementById('goat-bubble').innerText, hud: document.getElementById('goat-cursor').dataset.voice, last: window.GOATVoice.lastTurn() }));
+      throw new Error(`${err.message}; bubble: ${JSON.stringify(seen)}; Ollama calls: ${ollama.chats().length}`);
+    }
+    const audioCall = ollama.chats().find((c) => c.body.messages?.some((m) => m.content === 'Transcribe this audio.'));
     assert.ok(audioCall, 'the WAV reached Gemma');
-    assert.equal(Buffer.from(audioCall.body.messages[0].images[0], 'base64').toString('latin1', 8, 12), 'WAVE');
+    const wavB64 = audioCall.body.messages.at(-1).images[0];
+    assert.equal(Buffer.from(wavB64, 'base64').toString('latin1', 8, 12), 'WAVE');
     await page.keyboard.press('Escape');
+
+    ollama.calls.length = 0;
+    ollama.state.transcript = 'What am I looking at here?';
+    await app.evaluate(() => globalThis.__goatTest.voiceHold(true));
+    await sleep(1500);
+    await app.evaluate(() => globalThis.__goatTest.voiceHold(false));
+    await until(() => page.evaluate(() => /You said “What am I looking at here\?”/.test(document.getElementById('goat-bubble').innerText)), 'the spoken answer', 15_000);
+    const ask = ollama.chats().find((c) => c.body.messages?.at(-1)?.content?.startsWith("This picture shows the user's screen"));
+    assert.ok(ask, 'the question went to Gemma with the screen around the pointer');
+    assert.equal(ask.body.messages.at(-1).images.length, 1);
+    assert.match(ask.body.messages[0].content, /spoken aloud/);
+    await page.screenshot({ path: path.join(artifacts, 'electron-voice.png') });
   });
 
   await check('GOAT-compatible: a drafted guide gets its positions from the recorder and plays when asked', async () => {

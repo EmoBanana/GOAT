@@ -21,7 +21,10 @@ const LLM_REPLY = { id: 'r2', source: 'llm', say: 'Photos are the evidence for e
 const ERROR_REPLY = { error: 'model_missing', message: "The model gemma4:e4b-it-qat isn't pulled yet. Run: ollama pull gemma4:e4b-it-qat", status: 503 };
 
 // Fake media devices: getUserMedia returns a synthetic audio stream for the voice checks.
-const browser = await chromium.launch({ args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] });
+const speechFixture = path.join(root, 'scripts', 'fixtures', 'question.wav'); // "how do I log an issue"
+const browser = await chromium.launch({
+  args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${speechFixture}`, '--autoplay-policy=no-user-gesture-required'],
+});
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 const pageErrors = [];
 page.on('pageerror', (err) => pageErrors.push(err.message));
@@ -592,46 +595,105 @@ function wavInfo(b64) {
   };
 }
 
-await check('voice: Ctrl+Option+V records, sends a 16 kHz mono WAV, asks the transcript and speaks the answer', async () => {
-  await setReply('wallet', { ...WALLET, pro: true, proUntil: Date.now() + 86_400_000 });
-  await setReply('transcribe', { transcript: 'why do issues need a photo', model: 'gemma4:e4b-it-qat' });
-  await setReply('ask', LLM_REPLY);
-  await page.evaluate(() => {
+const spySpeech = () =>
+  page.evaluate(() => {
     window.__calls.length = 0;
     window.__spoken = [];
     window.speechSynthesis.speak = (u) => window.__spoken.push(u.text);
   });
-  await emit({ type: 'voice-toggle' });
-  await until(() => page.evaluate(() => document.getElementById('goat-cursor').classList.contains('listening')), 'the listening pill');
-  assert.match(await page.locator('.voice-pill').innerText(), /Listening… Ctrl\+Option\+V to send/);
+
+await check('voice: hold to talk shows a live waveform; letting go sends only the speech as a 16 kHz mono WAV', async () => {
+  await setReply('wallet', { ...WALLET, pro: true, proUntil: Date.now() + 86_400_000 });
+  await setReply('transcribe', { transcript: 'why do issues need a photo', model: 'gemma4:e4b-it-qat' });
+  await setReply('ask', LLM_REPLY);
+  await spySpeech();
+  await emit({ type: 'voice-hold', down: true });
+  await until(() => page.evaluate(() => document.getElementById('goat-cursor').dataset.voice === 'listening'), 'the waveform');
+  await sleep(1600); // the fake mic plays the fixture on a loop
+  const scales = await page.evaluate(() => [...document.querySelectorAll('.voice-hud .bar')].map((b) => parseFloat(/scaleY\(([\d.]+)\)/.exec(b.style.transform)?.[1] || '0')));
+  assert.ok(Math.max(...scales) > 0.3, `the bars follow the voice: ${scales}`);
   await shot('ui-15-listening');
-  await sleep(1200);
-  await emit({ type: 'voice-toggle' });
+  await emit({ type: 'voice-hold', down: false });
   const [tc] = await until(async () => {
     const c = await calls('transcribe');
     return c.length && c;
   }, 'goat.transcribe', 8000);
   const info = wavInfo(tc.args[0]);
   assert.deepEqual({ ...info, seconds: undefined }, { riff: 'RIFF', wave: 'WAVE', format: 1, channels: 1, rate: 16000, bits: 16, seconds: undefined });
-  assert.ok(info.seconds > 0.6 && info.seconds < 2.5, `recorded ${info.seconds} s`);
+  assert.ok(info.seconds > 0.4 && info.seconds < 2.2, `sent ${info.seconds} s of speech`);
+  const pcm = Buffer.from(tc.args[0], 'base64');
+  let peak = 0;
+  for (let i = 44; i + 1 < pcm.length; i += 2) peak = Math.max(peak, Math.abs(pcm.readInt16LE(i)));
+  assert.ok(peak > 0.8 * 32767, `normalised to about -1 dBFS (peak ${peak})`);
   const [askCall] = await until(async () => {
     const c = await calls('ask');
     return c.length && c;
   }, 'the ask');
-  assert.equal(askCall.args[0], 'why do issues need a photo');
-  await until(() => page.evaluate(() => window.__spoken.length > 0), 'the spoken answer');
+  assert.deepEqual(askCall.args, ['why do issues need a photo', { voice: true }]);
+  const b = await until(async () => {
+    const x = await bubble();
+    return x.visible && /You said/.test(x.text) && x;
+  }, 'the spoken answer');
+  assert.match(b.text, /You said “why do issues need a photo”/);
   assert.deepEqual(await page.evaluate(() => window.__spoken), [LLM_REPLY.say]);
-  assert.equal((await ui()).voice, false, 'voice mode ends with the answer');
+  await until(() => page.evaluate(() => [...document.querySelectorAll('#goat-bubble .text .w')].every((w) => w.classList.contains('on'))), 'every word revealed', 6000);
+  assert.equal((await ui()).voice, false, 'the voice turn ends with the answer');
+  await shot('ui-16-voice-answer');
+});
+
+await check('voice: a quick Option+Cmd tap, silence or noise sends nothing', async () => {
+  await spySpeech();
+  await emit({ type: 'voice-hold', down: true });
+  await sleep(150);
+  await emit({ type: 'voice-hold', down: false });
+  await sleep(600);
+  assert.equal((await calls('transcribe')).length, 0, 'a tap is a shortcut, not a question');
+  const verdicts = await page.evaluate(() => {
+    const V = window.GOATVoice;
+    const silence = new Float32Array(16000);
+    const hiss = Float32Array.from({ length: 16000 }, () => (Math.random() * 2 - 1) * 0.002);
+    const talk = Float32Array.from({ length: 16000 }, (_, i) => (i > 4000 && i < 12000 ? Math.sin(i / 8) * 0.3 * Math.abs(Math.sin(i / 400)) : (Math.random() * 2 - 1) * 0.002));
+    const roar = Float32Array.from({ length: 16000 }, () => (Math.random() * 2 - 1) * 0.2);
+    return [V.findSpeech(silence), V.findSpeech(hiss), V.findSpeech(talk), V.findSpeech(roar)];
+  });
+  assert.equal(verdicts[0], null, 'silence');
+  assert.equal(verdicts[1], null, 'quiet noise');
+  assert.ok(verdicts[2] && verdicts[2].voicedMs >= 300 && verdicts[2].start > 0 && verdicts[2].end < 16000, JSON.stringify(verdicts[2]));
+  assert.equal(verdicts[3], null, 'loud steady noise');
+  // Speech that fills the whole hold (press, talk, let go, no pause around it) still counts:
+  // the recorded question on a loop, starting at six different points.
+  const wav = fs.readFileSync(speechFixture);
+  const pcm = Array.from({ length: (wav.length - 44) / 2 }, (_, i) => wav.readInt16LE(44 + i * 2) / 32768);
+  const nonstop = await page.evaluate(
+    (pcm) => Array.from({ length: 6 }, (_, k) => window.GOATVoice.findSpeech(Float32Array.from({ length: 24000 }, (_, i) => pcm[(i + k * 4000) % pcm.length]))?.voicedMs ?? 0),
+    pcm,
+  );
+  assert.ok(nonstop.every((ms) => ms >= 300), `voiced ms per start point: ${nonstop}`);
+});
+
+await check('voice: a spoken question that matches a guide reads each step aloud', async () => {
+  await setReply('transcribe', { transcript: 'how do I log an issue' });
+  await setReply('ask', GUIDE_REPLY);
+  await spySpeech();
+  await emit({ type: 'voice-hold', down: true });
+  await sleep(1000);
+  await emit({ type: 'voice-hold', down: false });
+  await until(async () => (await ui()).guide?.landed, 'the guide');
+  await until(() => page.evaluate(() => window.__spoken.length > 0), 'step 1 read aloud');
+  assert.equal((await page.evaluate(() => window.__spoken))[0], 'Three quick steps. Click the first button.');
+  await page.keyboard.press('Escape');
+  await until(async () => (await ui()).guide === null, 'the guide to stop');
 });
 
 await check('voice: free users are pointed to the Pro upgrade', async () => {
   await setReply('wallet', WALLET);
   await page.evaluate(() => (window.__calls.length = 0));
-  await emit({ type: 'voice-toggle' });
+  await emit({ type: 'voice-hold', down: true });
   await page.waitForSelector('.wallet-balance', { state: 'visible' });
+  await emit({ type: 'voice-hold', down: false });
   assert.match((await bubble()).text, /Voice mode is part of GOAT Pro/);
   assert.equal((await calls('transcribe')).length, 0);
-  assert.equal(await page.evaluate(() => document.getElementById('goat-cursor').classList.contains('listening')), false);
+  assert.equal(await page.evaluate(() => document.getElementById('goat-cursor').dataset.voice || ''), '');
   await page.click('[data-action="close"]');
 });
 

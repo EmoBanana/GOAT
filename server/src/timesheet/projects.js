@@ -32,6 +32,7 @@ export function createProjectMatcher(raw) {
     browserApps: raw.browserApps || [],
     isTracked: (app) => tracked.has(String(app).toLowerCase()),
     isBrowser: (app) => browsers.has(String(app).toLowerCase()),
+    names: projects.map((p) => p.name),
     projectFor,
   };
 }

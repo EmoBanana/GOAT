@@ -3,6 +3,7 @@ import { after, before, beforeEach, describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { isSmallTalk, plainText } from '../src/assist.js';
 import { DEFAULT_MODEL } from '../src/config.js';
+import { createMemory } from '../src/memory.js';
 import { closedPortUrl, startMockOllama } from './helpers/mock-ollama.js';
 import { startTestServer } from './helpers/test-server.js';
 
@@ -53,7 +54,8 @@ describe('POST /api/assist', () => {
     assert.equal(call.body.stream, false);
     assert.equal(call.body.keep_alive, '30m');
     assert.equal(call.body.options.temperature, 0.3);
-    const [system, user] = call.body.messages;
+    const system = call.body.messages[0];
+    const user = call.body.messages.at(-1); // the current question comes last, after any history
     assert.equal(system.role, 'system');
     assert.match(system.content, /at most 3 short sentences/);
     assert.match(user.content, /Every issue needs at least one photo/);
@@ -63,7 +65,7 @@ describe('POST /api/assist', () => {
 
   test('URL query strings never reach the model', async () => {
     await srv.request('POST', '/api/assist', { body: { question: 'Why do issues need a photo?', context: inForma } });
-    const user = ollama.chats()[0].body.messages[1].content;
+    const user = ollama.chats()[0].body.messages.at(-1).content;
     assert.match(user, /URL: https:\/\/acc\.autodesk\.com\/build\/issues/);
     assert.doesNotMatch(user, /projectId|secret/);
   });
@@ -422,4 +424,84 @@ describe('thinking budget', () => {
       await ollama.close();
     }
   });
+});
+
+describe('voice questions: screen context, spoken style and follow-ups', () => {
+  const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+  const MOCK_MCP = fileURLToPath(new URL('./helpers/mock-mcp-server.js', import.meta.url));
+
+  test('with the screen attached, a guide still wins', async () => {
+    const ollama = await startMockOllama();
+    const srv = await startTestServer({ ollamaUrl: ollama.url });
+    try {
+      const r = await srv.request('POST', '/api/assist', { body: { question: 'how do I log an issue', screen: PNG, voice: true, context: inForma } });
+      assert.equal(r.body.source, 'guide');
+      assert.equal(ollama.chats().length, 0);
+    } finally {
+      await srv.close();
+      await ollama.close();
+    }
+  });
+
+  test('otherwise Gemma sees the screen, answers for listening, and gets no web tools', async () => {
+    const ollama = await startMockOllama({ toolCalls: () => [{ function: { name: 'brave_web_search', arguments: { query: 'x' } } }], reply: () => 'That is the issue list.' });
+    const srv = await startTestServer({
+      ollamaUrl: ollama.url,
+      mcp: { config: { mcpServers: { search: { command: process.execPath, args: [MOCK_MCP] } } } },
+    });
+    try {
+      const r = await srv.request('POST', '/api/assist', {
+        body: { question: 'What am I looking at here?', screen: PNG, voice: true, context: { ...inForma, region: { x: 0, y: 0, width: 1280, height: 800 } } },
+      });
+      assert.equal(r.body.source, 'llm');
+      assert.equal(r.body.screen, true);
+      assert.equal(r.body.image, false);
+      const [call] = ollama.chats();
+      assert.equal(ollama.chats().length, 1);
+      assert.equal(call.body.tools, undefined, 'screen contents never go to web tools');
+      assert.match(call.body.messages[0].content, /spoken aloud.*read out/);
+      const current = call.body.messages.at(-1);
+      assert.deepEqual(current.images, [PNG]);
+      assert.match(current.content, /^This picture shows the user's screen around their mouse pointer \(1280×800 points\)/);
+    } finally {
+      await srv.close();
+      await ollama.close();
+    }
+  });
+
+  test('follow-ups see the last exchanges, per user, without the old prompts', async () => {
+    const ollama = await startMockOllama({ reply: (body) => `Answer ${body.messages.length}` });
+    const srv = await startTestServer({ ollamaUrl: ollama.url });
+    try {
+      await srv.request('POST', '/api/assist', { user: 'pat', body: { question: 'how do I log an issue' } });
+      await srv.request('POST', '/api/assist', { user: 'pat', body: { question: 'Why do issues need a photo?' } });
+      await srv.request('POST', '/api/assist', { user: 'pat', body: { question: 'and who checks it?' } });
+      const last = ollama.chats().at(-1).body.messages;
+      assert.deepEqual(
+        last.slice(1, -1).map((m) => [m.role, m.content]),
+        [
+          ['user', 'how do I log an issue'],
+          ['assistant', '(GOAT played the guide "Log an issue in Forma Build".)'],
+          ['user', 'Why do issues need a photo?'],
+          ['assistant', 'Answer 4'], // that ask already carried the guide exchange: system + 2 + itself
+        ],
+      );
+      await srv.request('POST', '/api/assist', { user: 'sam', body: { question: 'and who checks it?' } });
+      assert.equal(ollama.chats().at(-1).body.messages.length, 2, "another user doesn't see pat's history");
+    } finally {
+      await srv.close();
+      await ollama.close();
+    }
+  });
+});
+
+test('memory keeps the last few exchanges for a while, then forgets', () => {
+  let t = 0;
+  const memory = createMemory({ maxTurns: 2, ttlMs: 1000, now: () => t });
+  memory.add('pat', 'q1', 'a1');
+  memory.add('pat', 'q2', 'a2');
+  memory.add('pat', 'q3', 'a3');
+  assert.deepEqual(memory.recent('pat'), [{ question: 'q2', answer: 'a2' }, { question: 'q3', answer: 'a3' }]);
+  t = 1500;
+  assert.deepEqual(memory.recent('pat'), []);
 });

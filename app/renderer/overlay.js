@@ -32,6 +32,7 @@
     bubble: null, // { kind }
     clickThrough: true,
     voice: false,
+    heard: '',
     info: { platform: 'darwin', hotkeys: { ask: 'Ctrl+Option+G' } },
   };
 
@@ -226,7 +227,10 @@
       b.append(close);
     }
     if (opts.intro) b.append(el('div', 'intro', opts.intro));
-    b.append(el('div', 'text', opts.text || ''));
+    const textEl = el('div', 'text', opts.reveal ? '' : opts.text || '');
+    b.append(textEl);
+    if (opts.reveal) revealWords(textEl, opts.text || '');
+    else clearInterval(revealTimer);
     if (opts.meta) b.append(el('div', 'meta', opts.meta));
     if (opts.sources) b.append(el('div', 'sources', opts.sources));
     if (opts.step || opts.next) {
@@ -320,7 +324,7 @@
     hideBubble();
     const me = { id: guide.id, index: -1, stopped: false, advance: null, cancel: null };
     run = me;
-    emit('guide:start', { id: guide.id, total: steps.length });
+    emit('guide:start', { id: guide.id, total: steps.length, intro: guide.intro });
     for (let i = 0; i < steps.length; i += 1) {
       const s = steps[i];
       me.index = i;
@@ -341,7 +345,7 @@
         at: s,
         onAction: (action) => (action === 'next' ? me.advance && me.advance('next') : stopGuide('closed')),
       });
-      emit('guide:step', { id: guide.id, index: i, total: steps.length, label: s.label });
+      emit('guide:step', { id: guide.id, index: i, total: steps.length, label: s.label, say: s.say, intro: guide.intro });
       const how = await waitForAdvance(me, s);
       if (me.stopped) return;
       emit('guide:advance', { id: guide.id, index: i, how });
@@ -447,11 +451,54 @@
     return p;
   }
 
-  function speak(text) {
-    if (!state.voice || !text || !('speechSynthesis' in window)) return false;
+  // The best installed English voice: Premium, then Enhanced, then the familiar Mac voices.
+  let bestVoice = null;
+  function pickVoice() {
+    if (!('speechSynthesis' in window)) return null;
+    const score = (v) =>
+      (/premium/i.test(v.name) ? 8 : /enhanced/i.test(v.name) ? 6 : /siri/i.test(v.name) ? 4 : /samantha|ava|zoe|daniel|karen|moira|serena|allison/i.test(v.name) ? 2 : 0) +
+      (v.localService ? 1 : 0);
+    const english = window.speechSynthesis.getVoices().filter((v) => /^en([-_]|$)/i.test(v.lang));
+    return english.sort((a, b) => score(b) - score(a))[0] || null;
+  }
+  if ('speechSynthesis' in window) window.speechSynthesis.addEventListener?.('voiceschanged', () => (bestVoice = pickVoice()));
+
+  // Speaks while voice mode is on (opts.force: always, e.g. guide steps of a spoken question).
+  function speak(text, opts = {}) {
+    if ((!state.voice && !opts.force) || !text || !('speechSynthesis' in window)) return false;
     window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(new SpeechSynthesisUtterance(text));
+    const u = new SpeechSynthesisUtterance(text);
+    bestVoice = bestVoice || pickVoice();
+    if (bestVoice) u.voice = bestVoice;
+    u.rate = 1.05;
+    u.onstart = () => emit('speak:start', { text });
+    u.onend = () => emit('speak:end', { text });
+    u.onerror = () => emit('speak:end', { text });
+    window.speechSynthesis.speak(u);
     return true;
+  }
+  function stopSpeaking() {
+    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+  }
+
+  // Spoken answers appear word by word, about as fast as they're read out.
+  let revealTimer = null;
+  function revealWords(container, text, ms = 190) {
+    clearInterval(revealTimer);
+    container.replaceChildren();
+    const words = String(text).split(/(\s+)/).map((w) => {
+      const span = document.createElement('span');
+      span.className = 'w';
+      span.textContent = w;
+      container.append(span);
+      return span;
+    });
+    let i = 0;
+    revealTimer = setInterval(() => {
+      while (i < words.length && !words[i].textContent.trim()) words[i++].classList.add('on');
+      if (i < words.length) words[i++].classList.add('on');
+      if (i >= words.length) clearInterval(revealTimer);
+    }, ms);
   }
 
   function handleReply(reply) {
@@ -484,7 +531,16 @@
         }
       })
       .filter(Boolean);
-    showBubble({ kind: 'answer', text: reply.say || '…', meta, sources: hosts.length ? `Sources: ${hosts.join(', ')}` : '', follow: true });
+    const spoken = state.voice;
+    showBubble({
+      kind: 'answer',
+      intro: spoken && state.heard ? `You said “${state.heard}”` : '',
+      text: reply.say || '…',
+      meta,
+      sources: hosts.length ? `Sources: ${hosts.join(', ')}` : '',
+      follow: true,
+      reveal: spoken,
+    });
     speak(reply.say);
   }
 
@@ -539,6 +595,7 @@
   document.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape') return;
     event.preventDefault();
+    stopSpeaking();
     if (state.panel) {
       if (panelEscape) panelEscape();
       else closePanel();
@@ -575,9 +632,12 @@
     setThinking,
     toLocal,
     updateClickThrough,
-    setVoice: (on) => {
+    // Voice turn on/off; heard is the transcript shown above the spoken answer.
+    setVoice: (on, heard = '') => {
       state.voice = Boolean(on);
+      state.heard = on ? String(heard) : '';
     },
+    stopSpeaking,
     resumeFollow,
     addAskExtra,
     el,

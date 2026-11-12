@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
-import { checkWav, cleanTranscript } from '../src/voice.js';
+import { checkWav, cleanTranscript, isNoSpeech, vocabulary } from '../src/voice.js';
 import { startMockOllama } from './helpers/mock-ollama.js';
 import { startTestServer } from './helpers/test-server.js';
 
@@ -56,7 +56,11 @@ describe('POST /api/voice/transcribe', () => {
     const [call] = ollama.chats();
     assert.equal(call.body.think, false);
     assert.equal(call.body.options.temperature, 0);
-    assert.deepEqual(call.body.messages, [{ role: 'user', content: 'Transcribe this audio verbatim. Reply with only the transcript.', images: [wav()] }]);
+    const [system, user] = call.body.messages;
+    assert.match(system.content, /speech-to-text engine/);
+    assert.match(system.content, /Alpha Viaduct/, 'project names from config/projects.json');
+    assert.match(system.content, /never this list.*NO_SPEECH/);
+    assert.deepEqual(user, { role: 'user', content: 'Transcribe this audio.', images: [wav()] });
   });
 
   test('bad audio is a 400 and never reaches the model', async () => {
@@ -65,5 +69,34 @@ describe('POST /api/voice/transcribe', () => {
     assert.equal(r.status, 400);
     assert.equal(r.body.error, 'bad_audio');
     assert.equal(ollama.chats().length, 0);
+  });
+});
+
+describe('transcription guards', () => {
+  test('NO_SPEECH and a recited term list are a 422 no_speech, never a question', async () => {
+    const ollama = await startMockOllama({ transcript: 'NO_SPEECH' });
+    const srv = await startTestServer({ ollamaUrl: ollama.url, users: { pat: { id: 'pat', proUntil: Date.now() + 86_400_000 } } });
+    try {
+      const silent = await srv.request('POST', '/api/voice/transcribe', { user: 'pat', body: { audio: wav() } });
+      assert.equal(silent.status, 422);
+      assert.equal(silent.body.error, 'no_speech');
+      ollama.state.transcript = 'Forma Build, Revit, Bluebeam, RFI, ISO 19650, timesheet?';
+      const echo = await srv.request('POST', '/api/voice/transcribe', { user: 'pat', body: { audio: wav() } });
+      assert.equal(echo.status, 422);
+      ollama.state.transcript = 'Transcript: "Raise an RFI for pier P12 in Revit."';
+      const ok = await srv.request('POST', '/api/voice/transcribe', { user: 'pat', body: { audio: wav() } });
+      assert.equal(ok.body.transcript, 'Raise an RFI for pier P12 in Revit.');
+    } finally {
+      await srv.close();
+      await ollama.close();
+    }
+  });
+
+  test('the vocabulary adds project names without the "Sample:" prefix', () => {
+    const terms = vocabulary(['Sample: Alpha Viaduct', 'GOAT hackathon']);
+    assert.ok(terms.includes('Alpha Viaduct'));
+    assert.ok(terms.includes('GOAT hackathon'));
+    assert.ok(terms.length <= 30);
+    assert.equal(isNoSpeech('How do I log an issue in Forma Build?', terms), false);
   });
 });

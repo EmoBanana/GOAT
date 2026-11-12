@@ -63,7 +63,8 @@ export function createApi({ baseUrl, userId, walletAddress = null, fetchImpl = g
     baseUrl,
     userId,
     request,
-    assist: ({ question, context, image }) => request('POST', '/api/assist', { question, context, ...(image ? { image } : {}) }),
+    assist: ({ question, context, image, screen, voice }) =>
+      request('POST', '/api/assist', { question, context, ...(image ? { image } : {}), ...(screen ? { screen } : {}), ...(voice ? { voice: true } : {}) }),
     health: () => request('GET', '/api/health', undefined, 3000),
     me: () => request('GET', '/api/me', undefined, 5000),
     saveGuide: (guide) => request('POST', '/api/guides', guide, 10_000),
