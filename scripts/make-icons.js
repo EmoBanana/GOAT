@@ -11,15 +11,17 @@ const outDir = path.join(root, 'app', 'assets');
 fs.mkdirSync(outDir, { recursive: true });
 const art = fs.readFileSync(path.join(root, 'app', 'renderer', 'cursor-art.js'), 'utf8');
 
-// macOS template images are black plus alpha, and macOS tints them for light and dark menu bars.
-// Windows shows its tray icon as it is, so it gets the blue cursor with its white outline.
-const template = { fill: '#000000', stroke: '', size: 18, viewBox: '-1.25 1.25 21 21' };
-const blue = { fill: '#2563eb', stroke: '#ffffff', strokeWidth: 1.5, size: 16, viewBox: '-1.5 1 22 22' };
+// The cursor is GOAT's kopitiam cup. macOS template images are one colour plus alpha, and macOS
+// tints them for light and dark menu bars; Windows shows its tray icon as it is, so it gets the
+// cup in colour. The viewBox frames the cup (steam to shadow) in its 28-unit box.
+const CUP_BOX = '1.6 0.6 26.4 26.4';
+const template = { mono: '#000000', size: 18, viewBox: CUP_BOX };
+const colour = { size: 16, viewBox: CUP_BOX };
 const ICONS = [
   { name: 'trayTemplate.png', scale: 1, options: template },
   { name: 'trayTemplate@2x.png', scale: 2, options: template },
-  { name: 'tray.png', scale: 1, options: blue },
-  { name: 'tray@2x.png', scale: 2, options: blue },
+  { name: 'tray.png', scale: 1, options: colour },
+  { name: 'tray@2x.png', scale: 2, options: colour },
 ];
 
 const browser = await chromium.launch();

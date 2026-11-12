@@ -615,7 +615,7 @@ function refreshTray() {
 }
 
 function createTray() {
-  // macOS tints a black template icon for its menu bar; Windows shows the blue cursor as it is.
+  // macOS tints a one-colour cup (a template icon) for its menu bar; Windows shows the cup in colour.
   const icon = nativeImage.createFromPath(path.join(here, 'assets', isMac ? 'trayTemplate.png' : 'tray.png'));
   if (isMac) icon.setTemplateImage(true);
   tray = new Tray(icon);
