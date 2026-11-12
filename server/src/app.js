@@ -69,14 +69,14 @@ export function createApp({ config, guides, docs, llm, users, assist, mcp, proje
   });
 
   app.post('/api/assist', async (req, res) => {
-    const { question, context, image, screen, voice, chatId, document } = req.body || {};
+    const { question, context, image, screen, voice, chatId, document, targets } = req.body || {};
     // chatId: continue that chat; null starts a new one; absent continues a fresh one.
     const chat = typeof chatId === 'string' || chatId === null ? chatId : undefined;
     // Steps for the overlay's readout while this ask runs.
     const run = progressId(req.get('x-goat-progress'));
     const onStep = run ? (text) => progress.step(run, text) : undefined;
     try {
-      res.json(await assist({ question, context, image, screen, document, voice: voice === true, tier: users.tier(req.userId), userId: req.userId, chatId: chat, onStep }));
+      res.json(await assist({ question, context, image, screen, document, targets, voice: voice === true, tier: users.tier(req.userId), userId: req.userId, chatId: chat, onStep }));
     } finally {
       if (run) progress.done(run);
     }

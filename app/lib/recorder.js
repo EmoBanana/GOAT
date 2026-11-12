@@ -26,6 +26,12 @@ export function createRecorder({ now = () => Date.now() } = {}) {
     undo() {
       return session?.steps.pop() ?? null;
     },
+    // The control under the pointer at that capture, found a moment later.
+    setTarget(n, target) {
+      const step = session?.steps[n - 1];
+      if (step && target && typeof target.label === 'string') step.target = { label: target.label.slice(0, 80), role: String(target.role || '').slice(0, 20) };
+      return Boolean(step);
+    },
     stop() {
       if (!session) return null;
       const result = { app: session.app, steps: session.steps, startedAt: session.startedAt, stoppedAt: now() };
@@ -39,7 +45,9 @@ export function createRecorder({ now = () => Date.now() } = {}) {
 export function buildGuide(form, { app = '', recordedOn = '' } = {}) {
   const steps = (form.steps || []).map((s, i) => {
     const label = String(s.label ?? '').trim() || `Step ${i + 1}`;
-    return { x: s.x, y: s.y, label, say: String(s.say ?? '').trim() || `${label}.` };
+    const step = { x: s.x, y: s.y, label, say: String(s.say ?? '').trim() || `${label}.` };
+    if (s.target && typeof s.target.label === 'string' && s.target.label.trim()) step.target = { label: s.target.label.trim().slice(0, 80), role: String(s.target.role || '').slice(0, 20) };
+    return step;
   });
   return {
     title: String(form.title ?? '').trim(),

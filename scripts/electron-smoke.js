@@ -199,6 +199,73 @@ try {
     await page.keyboard.press('Escape');
   });
 
+  const tipAt = () =>
+    page.evaluate(() => {
+      const r = document.getElementById('goat-cursor').getBoundingClientRect();
+      return { x: r.left, y: r.top };
+    });
+  const setTargets = (elements) => app.evaluate((_electron, value) => globalThis.__goatTest.setFakeTargets(value), elements ? JSON.stringify({ elements }) : '');
+
+  await check('GOAT works out a guide from the controls on screen, and finds each control where it is now', async () => {
+    const screenNow = [
+      { label: 'Issues', role: 'link', x: 20, y: 300, w: 120, h: 32 },
+      { label: 'Filters', role: 'button', x: 600, y: 200, w: 100, h: 30 },
+    ];
+    await setTargets(screenNow);
+    const before = ollama.state.reply;
+    const plan = { intro: "Here's how to filter issues by assignee.", steps: [{ target: 'Filters', say: 'Click Filters.' }, { target: 'Assignee', say: 'Pick the assignee.' }] };
+    ollama.state.reply = (body) => (body.format ? JSON.stringify(plan) : before(body));
+    try {
+      ollama.calls.length = 0;
+      await askThroughMain('how do I filter issues by assignee?');
+      await until(() => page.evaluate(() => window.GOATUI.state().guide?.index === 0 && window.GOATUI.state().guide.landed), 'the planned guide');
+      const planned = ollama.chats().find((c) => c.body.format);
+      assert.ok(planned.body.messages.at(-1).content.includes('- "Filters" button'), 'Gemma saw the controls on screen');
+      assert.equal(await page.evaluate(() => window.GOATUI.state().guide.located), 'live');
+      let tip = await tipAt();
+      assert.ok(Math.abs(tip.x - 650) <= 1 && Math.abs(tip.y - 215) <= 1, `on Filters: ${JSON.stringify(tip)}`);
+      // Clicking Filters opens a menu with Assignee in it; the next step finds it there.
+      await setTargets([...screenNow, { label: 'Assignee', role: 'option', x: 600, y: 260, w: 140, h: 28 }]);
+      await page.click('#goat-bubble .next');
+      await until(() => page.evaluate(() => window.GOATUI.state().guide?.index === 1 && window.GOATUI.state().guide.landed), 'the second step');
+      tip = await tipAt();
+      assert.ok(Math.abs(tip.x - 670) <= 1 && Math.abs(tip.y - 274) <= 1, `on Assignee: ${JSON.stringify(tip)}`);
+      await page.screenshot({ path: shot('electron-planned-guide.png') });
+      await page.keyboard.press('Escape');
+    } finally {
+      ollama.state.reply = before;
+      await setTargets(null);
+    }
+  });
+
+  await check('a recorded guide finds its control again after the screen changes, as at another resolution', async () => {
+    const exportAt = (x, y) => [{ label: 'Export', role: 'button', x, y, w: 100, h: 30 }];
+    await setTargets(exportAt(400, 100));
+    try {
+      await app.evaluate(() => globalThis.__goatTest.toggleRecording());
+      await app.evaluate(() => globalThis.__goatTest.captureStep({ x: 450, y: 115 }));
+      await until(() => page.evaluate(() => /“Export”/.test(document.querySelector('.rec-hud')?.innerText || '')), 'the control name in the HUD');
+      await app.evaluate(() => globalThis.__goatTest.toggleRecording());
+      await page.waitForSelector('.rec-form', { state: 'visible' });
+      assert.equal(await page.inputValue('[name="label-0"]'), 'Export');
+      await page.fill('[name="title"]', 'Export the issue list');
+      await page.fill('[name="triggers"]', 'export the issue list');
+      await page.click('.rec-form button[type="submit"]');
+      await until(() => page.evaluate(() => /Saved "Export the issue list"/.test(document.getElementById('goat-toasts').innerText)), 'the saved toast');
+      const saved = await srv.request('GET', '/api/guides/export-the-issue-list');
+      assert.deepEqual(saved.body.steps[0].target, { label: 'Export', role: 'button' });
+      // The same app at another resolution: the button is somewhere else now.
+      await setTargets(exportAt(900, 500));
+      await askThroughMain('how do I export the issue list?');
+      await until(() => page.evaluate(() => window.GOATUI.state().guide?.id === 'export-the-issue-list' && window.GOATUI.state().guide.landed), 'the recorded guide');
+      const tip = await tipAt();
+      assert.ok(Math.abs(tip.x - 950) <= 1 && Math.abs(tip.y - 515) <= 1, `on the moved Export button: ${JSON.stringify(tip)}`);
+      await page.keyboard.press('Escape');
+    } finally {
+      await setTargets(null);
+    }
+  });
+
   await check('a highlighted area goes from main to Gemma as an image', async () => {
     ollama.calls.length = 0;
     await app.evaluate(() => globalThis.__goatTest.openAsk());

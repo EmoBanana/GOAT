@@ -66,7 +66,7 @@ export function createApi({ baseUrl, userId, walletAddress = null, fetchImpl = g
     userId,
     request,
     // progressId names the ask so its live steps can be read from /api/progress/:id meanwhile.
-    assist: ({ question, context, image, screen, voice, chatId, document, progressId }) =>
+    assist: ({ question, context, image, screen, voice, chatId, document, targets, progressId }) =>
       request('POST', '/api/assist', {
         question,
         context,
@@ -75,6 +75,7 @@ export function createApi({ baseUrl, userId, walletAddress = null, fetchImpl = g
         ...(voice ? { voice: true } : {}),
         ...(typeof chatId === 'string' || chatId === null ? { chatId } : {}),
         ...(document ? { document } : {}),
+        ...(Array.isArray(targets) && targets.length ? { targets } : {}),
       }, timeoutMs, progressId ? { 'x-goat-progress': progressId } : {}),
     progress: (id) => request('GET', `/api/progress/${encodeURIComponent(id)}`, undefined, 2000),
     health: () => request('GET', '/api/health', undefined, 3000),

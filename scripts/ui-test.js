@@ -913,6 +913,64 @@ await check('while GOAT works, the readout beside the cursor shows each step', a
   await setReply('ask', LLM_REPLY);
 });
 
+const guideWith = (recordedOn, step) => ({ ...GUIDE_REPLY, guide: { id: `live-${recordedOn}`, title: 'Live', intro: 'Follow me.', recordedOn, steps: [step, { x: 640, y: 620, label: 'End', say: 'Done here.' }] } });
+
+await check('a step that names its control lands on it where it is now, not where it was recorded', async () => {
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => (window.__calls.length = 0));
+  await setReply('locate', { x: 700, y: 400, w: 100, h: 40, label: 'Create issue' });
+  await setReply('ask', guideWith('1710x1107', { x: 10, y: 10, label: 'Create issue', say: 'Click Create issue.', target: { label: 'Create issue', role: 'button' } }));
+  await askVia('how do I create an issue?');
+  await until(async () => (await ui()).guide?.landed === true, 'the first step');
+  assert.equal((await ui()).guide.located, 'live');
+  assert.ok(near(await tip(), { x: 750, y: 420 }, 0.5), `tip at ${JSON.stringify(await tip())}`);
+  assert.ok(near(await ringCentre(), { x: 750, y: 420 }, 1));
+  assert.deepEqual((await calls('locate'))[0].args, [{ label: 'Create issue', role: 'button' }]);
+  await shot('ui-22-live-target');
+  await page.keyboard.press('Escape');
+});
+
+await check("a sample step it can't find says what to look for instead of pointing somewhere wrong", async () => {
+  await setReply('locate', null);
+  await setReply('ask', guideWith('sample-1440x900', { x: 10, y: 10, label: 'Issues', say: 'Open Issues from the left menu.', target: { label: 'Issues' } }));
+  await askVia('how do I log an issue?');
+  await until(async () => (await ui()).guide?.landed === true, 'the first step');
+  assert.equal((await ui()).guide.located, 'none');
+  const b = await bubble();
+  assert.match(b.text, /Open Issues from the left menu\. Look for “Issues”\./);
+  assert.equal(await page.locator('#goat-ring').isHidden(), true, 'no ring without a target');
+  await page.click('#goat-bubble .next');
+  await until(async () => (await ui()).guide?.index === 1, 'Next to move on');
+  await page.keyboard.press('Escape');
+});
+
+await check("a recorded step it can't find falls back to its recorded points", async () => {
+  await setReply('locate', null);
+  await setReply('ask', guideWith('1710x1107', { x: 300, y: 220, label: 'Old button', say: 'Click it.', target: { label: 'Old button' } }));
+  await askVia('how do I do the old thing?');
+  await until(async () => (await ui()).guide?.landed === true, 'the first step');
+  assert.equal((await ui()).guide.located, 'recorded');
+  assert.ok(near(await tip(), { x: 300, y: 220 }, 0.5));
+  await page.keyboard.press('Escape');
+  await setReply('ask', LLM_REPLY);
+});
+
+await check('recording names each step after the control under the pointer', async () => {
+  await emit({ type: 'record:start', app: 'Microsoft Edge' });
+  await emit({ type: 'record:step', step: { n: 1, x: 950, y: 55 }, count: 1 });
+  await emit({ type: 'record:target', n: 1, target: { label: 'Create issue', role: 'button' } });
+  assert.match(await page.locator('.rec-hud').innerText(), /“Create issue” \(950, 55\)/);
+  await emit({ type: 'record:step', step: { n: 2, x: 20, y: 110 }, count: 2 });
+  await emit({ type: 'record:stop', app: 'Microsoft Edge', steps: [{ n: 1, x: 950, y: 55, target: { label: 'Create issue', role: 'button' } }, { n: 2, x: 20, y: 110 }] });
+  await page.waitForSelector('.rec-form', { state: 'visible' });
+  assert.equal(await page.inputValue('[name="label-0"]'), 'Create issue');
+  assert.equal(await page.inputValue('[name="label-1"]'), '');
+  // A name found after the form opened fills the empty field.
+  await emit({ type: 'record:target', n: 2, target: { label: 'Issues', role: 'link' } });
+  assert.equal(await page.inputValue('[name="label-1"]'), 'Issues');
+  await page.click('[data-action="discard"]');
+});
+
 await check('no page errors or CSP violations', async () => {
   assert.deepEqual(pageErrors, []);
   assert.deepEqual(await page.evaluate(() => window.__csp), []);

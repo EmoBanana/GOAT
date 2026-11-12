@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('goat', {
   chat: (id) => ipcRenderer.invoke('goat:chat', id),
   deleteChat: (id) => ipcRenderer.invoke('goat:delete-chat', id),
   clearChats: () => ipcRenderer.invoke('goat:clear-chats'),
+  locate: (target) => ipcRenderer.invoke('goat:locate', target),
   setClickThrough: (on) => ipcRenderer.send('goat:click-through', Boolean(on)),
   focus: () => ipcRenderer.send('goat:focus'),
   log: (...parts) => ipcRenderer.send('goat:log', parts.map(String).join(' ')),

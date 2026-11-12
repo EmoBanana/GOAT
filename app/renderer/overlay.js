@@ -359,36 +359,74 @@
     if (run) endGuide(run, reason);
   }
 
-  // Steps arrive in screen points; fly to each, show the ring and bubble, wait to advance.
+  // A step can name its control (target: a label, or { label, role }). Right before the step,
+  // main finds that control on screen as it is now, so the cursor lands on it whatever the
+  // resolution, window size or scroll. Not found, a recorded step falls back to its screen points;
+  // a sample or planned step says what to look for instead of pointing at the wrong place.
+  const targetOf = (s) =>
+    typeof s.target === 'string' && s.target.trim()
+      ? { label: s.target.trim() }
+      : s.target && typeof s.target.label === 'string' && s.target.label.trim()
+        ? { label: s.target.label.trim(), role: String(s.target.role || '') }
+        : null;
+  const hasPoint = (s) => Number.isFinite(Number(s.x)) && Number.isFinite(Number(s.y)) && s.x !== null && s.y !== null;
+
+  async function locateStep(step, sampleOnly) {
+    const target = targetOf(step);
+    if (target && goat.locate) {
+      let hit = null;
+      try {
+        hit = await goat.locate(target);
+      } catch {
+        hit = null;
+      }
+      if (hit && Number.isFinite(hit.x) && Number.isFinite(hit.y)) return { x: hit.x + (Number(hit.w) || 0) / 2, y: hit.y + (Number(hit.h) || 0) / 2, how: 'live', target };
+    }
+    if (hasPoint(step) && !(target && sampleOnly)) return { x: Number(step.x), y: Number(step.y), how: 'recorded', target };
+    return { x: NaN, y: NaN, how: 'none', target };
+  }
+
   async function playGuide(guide) {
     stopGuide('replaced');
-    const steps = (guide && Array.isArray(guide.steps) ? guide.steps : []).map((s) => ({ ...s, ...onScreen(toLocal(s)) }));
+    const steps = guide && Array.isArray(guide.steps) ? guide.steps : [];
     if (!steps.length) return;
     hideBubble();
+    const sampleOnly = /^sample/i.test(String(guide.recordedOn || ''));
     const me = { id: guide.id, index: -1, stopped: false, advance: null, cancel: null };
     run = me;
     emit('guide:start', { id: guide.id, total: steps.length, intro: guide.intro });
     for (let i = 0; i < steps.length; i += 1) {
-      const s = steps[i];
       me.index = i;
-      state.guide = { id: guide.id, index: i, total: steps.length, landed: false };
+      state.guide = { id: guide.id, index: i, total: steps.length, landed: false, located: null };
       hideRing();
-      const landed = await flyTo(s.x, s.y);
-      if (me.stopped || !landed) return;
-      state.guide.landed = true;
-      showRing(s.x, s.y);
+      const found = await locateStep(steps[i], sampleOnly);
+      if (me.stopped) return;
+      state.guide.located = found.how;
+      let s;
+      if (found.how === 'none') {
+        // Nothing to point at: the instruction beside the cursor, naming what to look for.
+        s = { ...steps[i], x: NaN, y: NaN };
+        state.guide.landed = true;
+      } else {
+        s = { ...steps[i], ...onScreen(toLocal(found)) };
+        const landed = await flyTo(s.x, s.y);
+        if (me.stopped || !landed) return;
+        state.guide.landed = true;
+        showRing(s.x, s.y);
+      }
+      const lookFor = found.how === 'none' && found.target ? ` Look for “${found.target.label}”.` : '';
       showBubble({
         kind: 'step',
         intro: i === 0 ? guide.intro : '',
-        text: s.say,
+        text: `${s.say || ''}${lookFor}`,
         step: i + 1,
         total: steps.length,
         next: true,
         nextLabel: i === steps.length - 1 ? 'Done' : 'Next',
-        at: s,
+        at: found.how === 'none' ? { x: state.pos.x + 20, y: state.pos.y + 24 } : s,
         onAction: (action) => (action === 'next' ? me.advance && me.advance('next') : stopGuide('closed')),
       });
-      emit('guide:step', { id: guide.id, index: i, total: steps.length, label: s.label, say: s.say, intro: guide.intro });
+      emit('guide:step', { id: guide.id, index: i, total: steps.length, label: s.label, say: s.say, intro: guide.intro, located: found.how });
       const how = await waitForAdvance(me, s);
       if (me.stopped) return;
       emit('guide:advance', { id: guide.id, index: i, how });

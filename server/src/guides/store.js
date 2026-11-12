@@ -53,6 +53,9 @@ export function validateGuide(input, opts = {}) {
     const step = { x: Math.round(x), y: Math.round(y), label, say: text(s.say) || `${label}.` };
     const waitMs = Number(s.waitMs);
     if (Number.isFinite(waitMs) && waitMs > 0) step.waitMs = Math.round(waitMs);
+    // The control to find on screen at play time (its points above are the fallback).
+    const target = typeof s.target === 'string' ? text(s.target) : text(s.target?.label);
+    if (target) step.target = { label: target.slice(0, 80), role: text(s.target?.role).slice(0, 20) };
     steps.push(step);
   });
   if (problems.length) throw new HttpError(400, 'invalid_guide', `A guide needs ${joinList(problems)}.`);

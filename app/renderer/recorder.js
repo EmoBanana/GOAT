@@ -25,8 +25,8 @@
     if (session.steps.length) {
       const list = ui.el('ol', 'rec-list');
       session.steps.forEach((s, i) => {
-        const label = session.plan && session.plan.steps[i] ? `${session.plan.steps[i].label} ` : '';
-        list.append(ui.el('li', null, `${label}(${s.x}, ${s.y})`));
+        const name = session.plan && session.plan.steps[i] ? session.plan.steps[i].label : s.target ? `“${s.target.label}”` : '';
+        list.append(ui.el('li', null, `${name ? `${name} ` : ''}(${s.x}, ${s.y})`));
       });
       hud.append(list);
     }
@@ -62,6 +62,7 @@
   ui.onEvent('record:step', (msg) => {
     if (!session || !msg.step) return;
     const step = { x: msg.step.x, y: msg.step.y };
+    if (msg.step.target) step.target = msg.step.target;
     session.steps.push(step);
     addMarker(step, session.steps.length);
     renderHud();
@@ -72,9 +73,23 @@
     });
   });
 
+  // The control under each capture (found a moment after it): its name labels the step.
+  ui.onEvent('record:target', (msg) => {
+    const i = Number(msg.n) - 1;
+    if (!msg.target || !(i >= 0)) return;
+    if (session && session.steps[i]) {
+      session.steps[i].target = msg.target;
+      renderHud();
+    } else if (draft && draft.steps[i]) {
+      draft.steps[i].target = msg.target;
+      const input = document.querySelector(`#goat-panel [name="label-${i}"]`);
+      if (input && !input.value) input.value = msg.target.label;
+    }
+  });
+
   ui.onEvent('record:stop', (msg) => {
     hud.hidden = true;
-    const steps = (msg.steps || (session && session.steps) || []).map((s) => ({ x: s.x, y: s.y }));
+    const steps = (msg.steps || (session && session.steps) || []).map((s) => ({ x: s.x, y: s.y, ...(s.target ? { target: s.target } : {}) }));
     const app = msg.app || (session && session.app) || '';
     const drafted = (session && session.plan) || null;
     session = null;
@@ -91,7 +106,7 @@
       intro: drafted ? drafted.intro : '',
       steps: steps.map((s, i) => {
         const d = drafted && drafted.steps[i];
-        return { ...s, label: d ? d.label : '', say: d ? d.say : '' };
+        return { ...s, label: d ? d.label : (s.target && s.target.label) || '', say: d ? d.say : '' };
       }),
     };
     openForm();

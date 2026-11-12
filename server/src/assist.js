@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { HttpError } from './errors.js';
 import { matchGuide, RELATED_MIN, relatedGuides, wantsExplanation } from './guides/match.js';
+import { cleanTargets, HOW_TO, planGuide } from './guides/plan.js';
 
 export const SYSTEM_PROMPT = [
   "You are GOAT, Gamuda's friendly AI assistant that helps engineers right on their screen.",
@@ -176,7 +177,7 @@ const SCREEN_NOTE = (region) =>
 // ("and then?") make sense. document: the whole deck or page in front (answered from directly,
 // no web tools). onStep: live steps for the overlay's readout.
 export function createAssist({ config, guides, docs, llm, mcp = null, chats = null }) {
-  return async function assist({ question, context, tier = 'free', image, screen, document, voice = false, userId = 'anonymous', chatId, onStep }) {
+  return async function assist({ question, context, tier = 'free', image, screen, document, targets, voice = false, userId = 'anonymous', chatId, onStep }) {
     const started = Date.now();
     const q = typeof question === 'string' ? question.trim() : '';
     if (!q) throw new HttpError(400, 'empty_question', 'Ask me something first.');
@@ -222,12 +223,55 @@ export function createAssist({ config, guides, docs, llm, mcp = null, chats = nu
       }
     }
 
+    // Pro tries its model first and falls back to the base model if it isn't pulled.
+    const candidates = tier === 'pro' && config.modelPro && config.modelPro !== config.model ? [config.modelPro, config.model] : [config.model];
+    let model = null;
+    async function ask(opts) {
+      if (model) return llm.chat({ model, ...opts });
+      for (const [i, m] of candidates.entries()) {
+        try {
+          const r = await llm.chat({ model: m, ...opts });
+          model = m;
+          return r;
+        } catch (err) {
+          if (err.code === 'model_missing' && i < candidates.length - 1) continue;
+          throw err;
+        }
+      }
+      return null;
+    }
+
     const smallTalk = !picture && !doc && isSmallTalk(q);
     if (!smallTalk) step('Checking company procedures');
     const found = smallTalk ? { text: '', sources: [], relevant: true } : buildContext({ question: q, context: ctx, docs, guides });
     const usedDoc = found.sources.find((s) => s.type === 'doc');
     // "Sample SOP: logging site issues › Photos" shows as the section: "Using “Photos”".
     if (usedDoc) step(`Using “${String(usedDoc.heading).split('›').pop().trim().slice(0, 40) || usedDoc.file}”`);
+
+    // A how-to question, no recorded guide, and the controls on screen: GOAT plans a guide from
+    // the procedures and what's on screen. Without a plan that starts on a real control, it
+    // answers in words as usual.
+    const controls = !picture && HOW_TO.test(q) ? cleanTargets(targets) : [];
+    if (controls.length) {
+      step('Planning the steps');
+      const plan = await planGuide({ chat: ask, question: q, ctx, procedures: found.text, doc, targets: controls });
+      if (plan) {
+        step(`Found “${plan.steps[0].label}” on screen`);
+        const id = `planned-${base.id.slice(0, 8)}`;
+        return {
+          ...base,
+          ...save({ answer: plan.intro, source: 'guide', guide: { id, title: q } }),
+          source: 'guide',
+          planned: true,
+          say: plan.intro,
+          guide: { id, title: q, intro: plan.intro, steps: plan.steps, planned: true },
+          model,
+          sources: found.sources,
+          latencyMs: Date.now() - started,
+        };
+      }
+    }
+
     const mode = config.think || 'auto';
     // Region and document asks stay quick unless thinking is always on.
     const deep = picture || doc ? mode === 'always' : !smallTalk && (mode === 'always' || (mode === 'auto' && !found.relevant));
@@ -247,23 +291,7 @@ export function createAssist({ config, guides, docs, llm, mcp = null, chats = nu
     ]);
     const messages = [{ role: 'system', content: system }, ...history, current];
 
-    // Pro tries its model first and falls back to the base model if it isn't pulled.
-    const candidates = tier === 'pro' && config.modelPro && config.modelPro !== config.model ? [config.modelPro, config.model] : [config.model];
-    let model = null;
-    async function chat(opts) {
-      if (model) return llm.chat({ model, messages, ...opts });
-      for (const [i, m] of candidates.entries()) {
-        try {
-          const r = await llm.chat({ model: m, messages, ...opts });
-          model = m;
-          return r;
-        } catch (err) {
-          if (err.code === 'model_missing' && i < candidates.length - 1) continue;
-          throw err;
-        }
-      }
-      return null;
-    }
+    const chat = (opts) => ask({ messages, ...opts });
 
     let answer;
     let thought = false;

@@ -29,7 +29,8 @@ describe('POST /api/assist', () => {
     assert.equal(r.body.source, 'guide');
     assert.equal(r.body.guide.id, 'forma-log-issue');
     assert.equal(r.body.guide.steps.length, 7);
-    assert.deepEqual(Object.keys(r.body.guide.steps[0]).sort(), ['label', 'say', 'x', 'y']);
+    assert.deepEqual(Object.keys(r.body.guide.steps[0]).sort(), ['label', 'say', 'target', 'x', 'y']);
+    assert.deepEqual(r.body.guide.steps[1].target, { label: 'Create issue', role: '' }, 'found on screen by name at play time');
     assert.equal(r.body.say, r.body.guide.intro);
     assert.equal(r.body.model, null);
     assert.equal(r.body.tier, 'free');

@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { sampleActiveWindow } from './lib/active-window.js';
 import { captureRegion } from './lib/capture.js';
 import { documentHint, documentKind, readDocument } from './lib/doc-context.js';
+import { findTarget, readTargets, targetAt } from './lib/screen-targets.js';
 import { startHoldKeys } from './lib/hold-keys.js';
 import { validRegion } from './lib/region.js';
 import { createApi } from './lib/api.js';
@@ -56,6 +57,7 @@ let tray = null;
 let cursorTimer = null;
 let lastCursor = null;
 let askContext = {};
+let askPid = 0; // the app asked about, for reading its controls (macOS Accessibility)
 let askOpening = false;
 let holdKeys = null;
 let streamPaused = false; // test hooks drive the cursor instead
@@ -161,7 +163,10 @@ async function openAsk(source = 'hotkey') {
   askOpening = true;
   try {
     const sample = await sampleActiveWindow({ timeoutMs: 700 });
-    if (sample && !isSelf(sample)) askContext = { app: sample.app, title: sample.title, url: sample.url || '' };
+    if (sample && !isSelf(sample)) {
+      askContext = { app: sample.app, title: sample.title, url: sample.url || '' };
+      askPid = Number(sample.pid) || 0;
+    }
     focusOverlay();
     send({ type: 'open-ask', context: askContext, source });
   } finally {
@@ -176,6 +181,7 @@ async function toggleRecording() {
   if (!recorder.recording) {
     const sample = await sampleActiveWindow({ timeoutMs: 700 });
     recorder.start({ app: sample && !isSelf(sample) ? sample.app : '' });
+    recordPid = sample && !isSelf(sample) ? Number(sample.pid) || 0 : 0;
     if (!globalShortcut.register(accelerator('C'), () => captureStep())) {
       console.warn(`[goat] ${hotkey('C')} is taken by another app; capture from the tray menu instead.`);
     }
@@ -265,7 +271,10 @@ async function voiceHold(down) {
     voiceScreen = null;
     send({ type: 'voice-hold', down: true });
     const sample = await sampleActiveWindow({ timeoutMs: 700 });
-    if (sample && !isSelf(sample)) askContext = { app: sample.app, title: sample.title, url: sample.url || '' };
+    if (sample && !isSelf(sample)) {
+      askContext = { app: sample.app, title: sample.title, url: sample.url || '' };
+      askPid = Number(sample.pid) || 0;
+    }
   } else {
     send({ type: 'voice-hold', down: false }); // stop recording first, then look at the screen
     voiceScreen = captureVoiceScreen();
@@ -274,10 +283,19 @@ async function voiceHold(down) {
 
 const toggleVoice = () => voiceHold(!voiceDown);
 
+let recordPid = 0;
 function captureStep(point) {
   if (!recorder.recording) return;
   const step = recorder.capture(point || screen.getCursorScreenPoint());
-  if (step) send({ type: 'record:step', step, count: recorder.steps.length });
+  if (!step) return;
+  send({ type: 'record:step', step, count: recorder.steps.length });
+  // Also note which control is under the pointer, so the guide can find it again at any
+  // resolution or window size (the points stay as the fallback).
+  targetAt({ app: recorder.app, pid: recordPid, x: step.x, y: step.y }).then((target) => {
+    if (!target) return;
+    recorder.setTarget(step.n, target);
+    send({ type: 'record:target', n: step.n, target });
+  });
 }
 
 // ---------- what GOAT reads when you ask ----------
@@ -299,6 +317,27 @@ async function readFrontDocument() {
     return null;
   }
   return doc;
+}
+
+// The controls on screen in the app asked about (lib/screen-targets.js). A how-to question takes
+// them along so GOAT can plan a guide; during a guide, each step's control is found again live.
+const HOW_TO = /^\s*(how (do|can|should|would) (i|we|you)|how to|where (do|can) i|where is|where's|show me|guide me|walk me through|take me|help me (find|get|do|set)|what do i (click|press))\b/i;
+let guideApp = { app: '', pid: 0 };
+async function readFrontTargets() {
+  guideApp = { app: askContext.app || '', pid: askPid };
+  send({ type: 'progress', step: 'Looking at the controls on screen' });
+  const read = await readTargets(guideApp);
+  if (!read || read.error) {
+    if (read?.error === 'js_off') {
+      const hint = documentHint({ kind: 'page', app: guideApp.app, error: 'js_off' });
+      if (hint && !docHints.has(`${guideApp.app}:js_off`)) {
+        docHints.add(`${guideApp.app}:js_off`);
+        send({ type: 'notice', text: hint });
+      }
+    }
+    return null;
+  }
+  return read.elements.length ? read.elements : null;
 }
 
 // Polls the server for an ask's steps and passes new ones to the overlay. stop() reads once more,
@@ -489,13 +528,14 @@ function registerIpc() {
       voiceScreen = null;
     }
     const context = region ? { ...askContext, region } : screenShot ? { ...askContext, region: screenShot.region } : askContext;
-    const document = await readFrontDocument();
+    // A how-to question also takes the controls on screen, so GOAT can plan a guide around them.
+    const [document, targets] = await Promise.all([readFrontDocument(), HOW_TO.test(question) ? readFrontTargets() : null]);
     // The server's steps ("Checking the guides"…) go to the readout while the answer comes.
     const progressId = globalThis.crypto.randomUUID();
     const steps = watchSteps(progressId);
     let reply;
     try {
-      reply = await api.assist({ question, context, image, screen: screenShot?.image, voice: payload?.voice === true, chatId: chatIdFrom(payload?.chatId), document, progressId });
+      reply = await api.assist({ question, context, image, screen: screenShot?.image, voice: payload?.voice === true, chatId: chatIdFrom(payload?.chatId), document, targets, progressId });
     } finally {
       await steps.stop();
     }
@@ -513,6 +553,14 @@ function registerIpc() {
   });
   ipcMain.on('goat:log', (event, line) => {
     if (fromOverlay(event)) console.log('[overlay]', String(line).slice(0, 500));
+  });
+  // A guide step's control, found on screen right now: { x, y, w, h } in screen points, or null.
+  ipcMain.handle('goat:locate', async (event, target) => {
+    if (!fromOverlay(event) || typeof target?.label !== 'string') return null;
+    const app = guideApp.app || askContext.app || '';
+    const read = await readTargets({ app, pid: guideApp.pid || askPid });
+    const hit = read && !read.error ? findTarget(read.elements, target.label.slice(0, 80), String(target.role || '')) : null;
+    return hit ? { x: hit.x, y: hit.y, w: hit.w, h: hit.h, label: hit.label } : null;
   });
   // Account and chats.
   const overlayOnly = (run) => (event, ...args) => (fromOverlay(event) ? run(...args) : { error: 'forbidden', message: 'Unknown sender.' });
@@ -608,6 +656,9 @@ if (!app.requestSingleInstanceLock()) {
         account: () => accountInfo(),
         setFakeDoc: (value) => {
           process.env.GOAT_FAKE_DOC = value;
+        },
+        setFakeTargets: (value) => {
+          process.env.GOAT_FAKE_TARGETS = value;
         },
         openAccount: () => openAccount(),
         startSignIn: (mode) => startSignIn(mode),

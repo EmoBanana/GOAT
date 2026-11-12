@@ -7,12 +7,12 @@
   "context": "Sample procedure: every site issue needs a type, a location-first title, an assignee and a photo.",
   "recordedOn": "sample-1440x900",
   "steps": [
-    { "x": 72, "y": 318, "label": "Issues", "say": "Open Issues from the left menu." },
-    { "x": 1288, "y": 142, "label": "Create issue", "say": "Click Create issue at the top right." },
-    { "x": 1180, "y": 262, "label": "Issue type", "say": "Pick the type. Site defects go under Quality, Defect." },
-    { "x": 1180, "y": 332, "label": "Title", "say": "Title it location first, then the defect." },
-    { "x": 1180, "y": 420, "label": "Assigned to", "say": "Assign it to the package manager for that area." },
-    { "x": 1180, "y": 604, "label": "Attachments", "say": "Attach at least one photo." },
-    { "x": 1330, "y": 822, "label": "Create", "say": "Hit Create. Done." }
+    { "x": 72, "y": 318, "label": "Issues", "say": "Open Issues from the left menu.", "target": { "label": "Issues" } },
+    { "x": 1288, "y": 142, "label": "Create issue", "say": "Click Create issue at the top right.", "target": { "label": "Create issue" } },
+    { "x": 1180, "y": 262, "label": "Issue type", "say": "Pick the type. Site defects go under Quality, Defect.", "target": { "label": "Issue type" } },
+    { "x": 1180, "y": 332, "label": "Title", "say": "Title it location first, then the defect.", "target": { "label": "Title" } },
+    { "x": 1180, "y": 420, "label": "Assigned to", "say": "Assign it to the package manager for that area.", "target": { "label": "Assigned to" } },
+    { "x": 1180, "y": 604, "label": "Attachments", "say": "Attach at least one photo.", "target": { "label": "Attachments" } },
+    { "x": 1330, "y": 822, "label": "Create", "say": "Hit Create. Done.", "target": { "label": "Create" } }
   ]
 }
