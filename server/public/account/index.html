@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- Scripts only from here and the pinned AppKit build. This also blocks the inline
+         telemetry script AppKit's Coinbase connector tries to add; sign-in works without it. -->
+    <meta http-equiv="Content-Security-Policy" content="script-src 'self' https://cdn.jsdelivr.net; object-src 'none'; base-uri 'none'">
+    <title>Sign in to GOAT</title>
+    <link rel="icon" href="icon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="account.css">
+  </head>
+  <body data-state="loading">
+    <main class="card">
+      <div class="mark" aria-hidden="true">
+        <svg width="40" height="40" viewBox="0 0 24 24"><path d="M3 2 L3 19 L7 15 L10 21.5 L12.8 20.3 L9.9 14 L15.5 14 Z" fill="#2563eb" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/></svg>
+      </div>
+
+      <section class="when-ready">
+        <h1>Sign in to GOAT</h1>
+        <p class="lead">Create an account with your email or Google, or connect a wallet you already have. Your GOAT balance, Pro and chats follow your account.</p>
+        <div class="actions">
+          <button id="create" class="primary" type="button">Create account</button>
+          <button id="connect" type="button">Connect wallet</button>
+        </div>
+      </section>
+
+      <section class="when-restored">
+        <h1>Welcome back</h1>
+        <p class="lead">This browser is still signed in as <strong id="was"></strong>.</p>
+        <div class="actions">
+          <button id="continue" class="primary" type="button">Continue as <span id="was-short"></span></button>
+          <button id="other" type="button">Use a different account</button>
+        </div>
+      </section>
+
+      <section class="when-done">
+        <h1>You're signed in</h1>
+        <p class="lead">Signed in as <strong id="who"></strong>. Go back to GOAT; you can close this tab. To switch accounts later, sign out in GOAT (Ctrl+Option+A).</p>
+      </section>
+
+      <section class="when-loading">
+        <h1>Sign in to GOAT</h1>
+        <p class="lead">Loading sign-in…</p>
+      </section>
+
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+    </main>
+    <script type="module" src="account.js"></script>
+  </body>
+</html>

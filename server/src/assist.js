@@ -146,10 +146,11 @@ const SCREEN_NOTE = (region) =>
 // Gemma answers fast when the SOPs or guides cover the question (or it's small talk), and
 // thinks first, with MCP tools such as web search, when nothing relevant was found.
 // image: a highlighted region (always goes to Gemma). screen: the area around the pointer sent
-// with a voice question (context only; guides still win). memory: recent exchanges, so
-// follow-ups ("and then?") make sense.
-export function createAssist({ config, guides, docs, llm, mcp = null, memory = null }) {
-  return async function assist({ question, context, tier = 'free', image, screen, voice = false, userId = 'anonymous' }) {
+// with a voice question (context only; guides still win). chats: every ask joins a chat (chatId,
+// a new one for null), and the chat's last few turns go with the question, so follow-ups
+// ("and then?") make sense.
+export function createAssist({ config, guides, docs, llm, mcp = null, chats = null }) {
+  return async function assist({ question, context, tier = 'free', image, screen, voice = false, userId = 'anonymous', chatId }) {
     const started = Date.now();
     const q = typeof question === 'string' ? question.trim() : '';
     if (!q) throw new HttpError(400, 'empty_question', 'Ask me something first.');
@@ -158,15 +159,20 @@ export function createAssist({ config, guides, docs, llm, mcp = null, memory = n
     const picture = image === undefined || image === null || image === '' ? null : checkImage(image);
     const view = picture || screen === undefined || screen === null || screen === '' ? null : checkImage(screen);
     const base = { id: crypto.randomUUID(), tier };
+    const thread = chats ? chats.resolve(userId, chatId) : null;
+    const save = (turn) => {
+      const saved = chats ? chats.add(userId, thread, { question: q, voice, ...turn }) : null;
+      return saved ? { chatId: saved.id, chatTitle: saved.title, chatTurns: saved.turns.length } : { chatId: null };
+    };
 
     // A highlighted region always goes to the model: it's a question about what's on screen.
     if (!picture && !wantsExplanation(q)) {
       const hit = matchGuide(q, guides.list(), ctx);
       if (hit) {
         const g = hit.guide;
-        memory?.add(userId, q, `(GOAT played the guide "${g.title}".)`);
         return {
           ...base,
+          ...save({ answer: g.intro, source: 'guide', guide: { id: g.id, title: g.title } }),
           source: 'guide',
           say: g.intro,
           guide: { id: g.id, title: g.title, intro: g.intro, steps: g.steps },
@@ -193,7 +199,7 @@ export function createAssist({ config, guides, docs, llm, mcp = null, memory = n
       : view
         ? { role: 'user', content: `${SCREEN_NOTE(context?.region)}\n\n${userText}`, images: [view] }
         : { role: 'user', content: userText };
-    const history = (memory?.recent(userId) || []).flatMap((t) => [
+    const history = (chats ? chats.history(thread) : []).flatMap((t) => [
       { role: 'user', content: t.question },
       { role: 'assistant', content: t.answer },
     ]);
@@ -255,10 +261,10 @@ export function createAssist({ config, guides, docs, llm, mcp = null, memory = n
       .slice(0, 3)
       .map((url) => ({ type: 'web', url }));
     const say = plainText(answer.text) || "Sorry, I couldn't come up with an answer. Try asking another way.";
-    memory?.add(userId, q, say);
 
     return {
       ...base,
+      ...save({ answer: say, source: 'llm', image: Boolean(picture) }),
       source: 'llm',
       say,
       guide: null,

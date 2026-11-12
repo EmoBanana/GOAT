@@ -64,8 +64,15 @@ export function createApi({ baseUrl, userId, walletAddress = null, fetchImpl = g
     baseUrl,
     userId,
     request,
-    assist: ({ question, context, image, screen, voice }) =>
-      request('POST', '/api/assist', { question, context, ...(image ? { image } : {}), ...(screen ? { screen } : {}), ...(voice ? { voice: true } : {}) }),
+    assist: ({ question, context, image, screen, voice, chatId }) =>
+      request('POST', '/api/assist', {
+        question,
+        context,
+        ...(image ? { image } : {}),
+        ...(screen ? { screen } : {}),
+        ...(voice ? { voice: true } : {}),
+        ...(typeof chatId === 'string' || chatId === null ? { chatId } : {}),
+      }),
     health: () => request('GET', '/api/health', undefined, 3000),
     me: () => request('GET', '/api/me', undefined, 5000),
     saveGuide: (guide) => request('POST', '/api/guides', guide, 10_000),
@@ -78,5 +85,11 @@ export function createApi({ baseUrl, userId, walletAddress = null, fetchImpl = g
     topup: (myr) => request('POST', '/api/wallet/topup', { myr }, 30_000),
     upgradePro: () => request('POST', '/api/pro/upgrade', {}, 30_000),
     transcribe: (audio) => request('POST', '/api/voice/transcribe', { audio }, 90_000),
+    chats: () => request('GET', '/api/chats', undefined, 8000),
+    chat: (id) => request('GET', `/api/chats/${encodeURIComponent(id)}`, undefined, 8000),
+    deleteChat: (id) => request('DELETE', `/api/chats/${encodeURIComponent(id)}`, undefined, 8000),
+    clearChats: () => request('DELETE', '/api/chats', undefined, 8000),
+    startSignIn: () => request('POST', '/api/account/start', {}, 8000),
+    signInResult: (code) => request('GET', `/api/account/link/${encodeURIComponent(code)}`, undefined, 8000),
   };
 }

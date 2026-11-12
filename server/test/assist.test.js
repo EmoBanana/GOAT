@@ -3,7 +3,6 @@ import { after, before, beforeEach, describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { isSmallTalk, plainText } from '../src/assist.js';
 import { DEFAULT_MODEL } from '../src/config.js';
-import { createMemory } from '../src/memory.js';
 import { closedPortUrl, startMockOllama } from './helpers/mock-ollama.js';
 import { startTestServer } from './helpers/test-server.js';
 
@@ -500,13 +499,3 @@ describe('voice questions: screen context, spoken style and follow-ups', () => {
   });
 });
 
-test('memory keeps the last few exchanges for a while, then forgets', () => {
-  let t = 0;
-  const memory = createMemory({ maxTurns: 2, ttlMs: 1000, now: () => t });
-  memory.add('pat', 'q1', 'a1');
-  memory.add('pat', 'q2', 'a2');
-  memory.add('pat', 'q3', 'a3');
-  assert.deepEqual(memory.recent('pat'), [{ question: 'q2', answer: 'a2' }, { question: 'q3', answer: 'a3' }]);
-  t = 1500;
-  assert.deepEqual(memory.recent('pat'), []);
-});

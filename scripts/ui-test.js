@@ -432,7 +432,7 @@ await check('highlight: a drag draws the rectangle, locks it, and the ask carrie
     const c = await calls('ask');
     return c.length && c;
   }, 'goat.ask');
-  assert.deepEqual(askCall.args, ['what is this?', { region: { x: 100, y: 500, width: 300, height: 200 } }]);
+  assert.deepEqual(askCall.args, ['what is this?', { region: { x: 100, y: 500, width: 300, height: 200 }, chatId: null }]);
   assert.equal((await hlBox()).hidden, false, 'the rectangle stays while GOAT looks at it');
   const b = await until(async () => {
     const x = await bubble();
@@ -469,7 +469,7 @@ await check('highlight: a tiny drag or a click is not a highlight, and Esc cance
     const c = await calls('ask');
     return c.length && c;
   }, 'a plain ask');
-  assert.equal(plain.args[1], null, 'a plain ask carries no region');
+  assert.deepEqual(plain.args[1], { chatId: null }, 'a plain ask carries no region');
 });
 
 await check('tracking: a red dot rides with the cursor while tracking is on', async () => {
@@ -629,7 +629,7 @@ await check('voice: hold to talk shows a live waveform; letting go sends only th
     const c = await calls('ask');
     return c.length && c;
   }, 'the ask');
-  assert.deepEqual(askCall.args, ['why do issues need a photo', { voice: true }]);
+  assert.deepEqual(askCall.args, ['why do issues need a photo', { voice: true, chatId: null }]);
   const b = await until(async () => {
     const x = await bubble();
     return x.visible && /You said/.test(x.text) && x;
@@ -735,6 +735,116 @@ await check('GOAT-compatible: docs become drafted steps, the recorder adds posit
   assert.equal(await page.inputValue('[name="label-0"]'), 'File');
   assert.equal(await page.inputValue('[name="say-1"]'), 'Choose Export, then PDF.');
   await page.click('[data-action="discard"]');
+});
+
+const ACCOUNT = { method: 'email', label: 'pat@example.com', how: 'Signed in with email', short: '0xabab…abab' };
+const CHAT_ID = 'a1b2c3d4e5f60718';
+const OLD_CHAT = {
+  id: CHAT_ID,
+  title: 'Why do issues need a photo?',
+  turns: [
+    { question: 'Why do issues need a photo?', answer: 'Photos are the evidence for every issue.', source: 'llm' },
+    { question: 'how do I log an issue', answer: "Let's log an issue.", source: 'guide', guide: { id: 'forma-log-issue', title: 'Log an issue in Forma Build' } },
+  ],
+};
+
+await check('welcome: without an account GOAT asks you to sign in; the browser sign-in finishes it', async () => {
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => (window.__calls.length = 0));
+  await setReply('signIn', { ok: true, url: 'http://127.0.0.1:8402/account/?code=x&mode=create' });
+  await emit({ type: 'open-welcome', signedIn: false, account: null, userId: 'ivanw' });
+  await page.waitForSelector('.panel-welcome', { state: 'visible' });
+  assert.match(await page.locator('.panel-welcome').innerText(), /Welcome to GOAT[\s\S]*Create account[\s\S]*Connect wallet[\s\S]*Continue offline/);
+  await shot('ui-17-welcome');
+  await page.click('[data-action="create"]');
+  await page.waitForSelector('.welcome-wait', { state: 'visible' });
+  assert.deepEqual((await calls('signIn'))[0].args, ['create']);
+  await page.click('[data-action="offline"]');
+  assert.equal((await calls('signInOffline')).length, 1);
+  // Main reports the account once the browser sign-in (or offline) is done.
+  await emit({ type: 'account', signedIn: true, account: ACCOUNT, userId: '0xabab' });
+  await until(async () => (await ui()).panel === null, 'the welcome panel to close');
+  await until(() => page.evaluate(() => /Signed in: pat@example\.com/.test(document.getElementById('goat-toasts').innerText)), 'the signed-in toast');
+  assert.match((await bubble()).text, /Ctrl\+Option\+G[\s\S]*Ctrl\+Option\+A/);
+  await page.keyboard.press('Escape');
+});
+
+await check('account (Ctrl+Option+A): who you are, your balance and your chats; a chat reopens above the ask input', async () => {
+  await page.evaluate(() => (window.__calls.length = 0));
+  await setReply('wallet', { mode: 'x402-local', balanceMyr: 7.8, balanceUsd: 1.86, priceMyr: 0.042, priceUsd: 0.01, pro: false });
+  await setReply('chats', { chats: [
+    { id: CHAT_ID, title: OLD_CHAT.title, turns: 2, updatedAt: Date.now() - 5 * 60_000 },
+    { id: 'ffffffffffffffff', title: 'how do I freeze the top row', turns: 1, updatedAt: Date.now() - 26 * 3600_000 },
+  ] });
+  await setReply('chat', OLD_CHAT);
+  await emit({ type: 'open-account', signedIn: true, account: ACCOUNT, userId: '0xabab' });
+  await page.waitForSelector('.panel-account .acct-chat', { state: 'visible' });
+  const text = await page.locator('.panel-account').innerText();
+  assert.match(text, /pat@example\.com/);
+  assert.match(text, /Signed in with email/);
+  await until(async () => /RM 7\.80/.test(await page.locator('.acct-balance').innerText()), 'the balance');
+  assert.match(text, /Why do issues need a photo\?[\s\S]*2 questions · 5 min ago[\s\S]*how do I freeze the top row[\s\S]*1 question · yesterday/);
+  await shot('ui-18-account');
+
+  await page.click(`[data-chat="${CHAT_ID}"]`);
+  await page.waitForSelector('.panel-ask .ask-thread', { state: 'visible' });
+  assert.deepEqual((await calls('chat'))[0].args, [CHAT_ID]);
+  const thread = await page.locator('.ask-thread').innerText();
+  assert.match(thread, /Why do issues need a photo\?[\s\S]*Photos are the evidence[\s\S]*Showed the guide “Log an issue in Forma Build”/);
+  assert.equal(await page.getAttribute('#goat-ask-input', 'placeholder'), 'Ask a follow-up…');
+  await shot('ui-19-thread');
+
+  // The follow-up continues that chat.
+  await setReply('ask', { ...LLM_REPLY, say: 'Whoever raised it checks the fix.', chatId: CHAT_ID, chatTitle: OLD_CHAT.title, chatTurns: 3 });
+  await page.keyboard.type('and who checks it?');
+  await page.keyboard.press('Enter');
+  const [follow] = await until(async () => {
+    const c = await calls('ask');
+    return c.length && c;
+  }, 'the follow-up');
+  assert.deepEqual(follow.args, ['and who checks it?', { chatId: CHAT_ID }]);
+  await until(() => page.evaluate(() => (window.GOATUI.chat() || { turns: [] }).turns.length === 3), 'the chat to grow');
+  await page.keyboard.press('Escape');
+
+  // New chat: the thread goes and the next ask starts fresh.
+  await emit({ type: 'open-ask', context: {} });
+  await page.waitForSelector('.ask-thread', { state: 'visible' });
+  assert.match(await page.locator('.ask-thread').innerText(), /and who checks it\?[\s\S]*Whoever raised it checks the fix\./);
+  await page.click('[data-action="new-chat"]');
+  assert.equal(await page.locator('.ask-thread').isHidden(), true);
+  await setReply('ask', { ...LLM_REPLY, chatId: 'bbbbbbbbbbbbbbbb', chatTitle: 'fresh', chatTurns: 1 });
+  await page.keyboard.type('fresh question');
+  await page.keyboard.press('Enter');
+  const fresh = await until(async () => {
+    const c = await calls('ask');
+    return c.length > 1 && c.at(-1);
+  }, 'the fresh ask');
+  assert.deepEqual(fresh.args, ['fresh question', { chatId: null }]);
+  await until(() => page.evaluate(() => (window.GOATUI.chat() || {}).id === 'bbbbbbbbbbbbbbbb'), 'the new chat');
+  await page.keyboard.press('Escape');
+  await setReply('ask', LLM_REPLY);
+});
+
+await check('account: delete a chat, clear all (two clicks), and sign out', async () => {
+  await page.evaluate(() => (window.__calls.length = 0));
+  await setReply('deleteChat', { deleted: 1 });
+  await setReply('clearChats', { deleted: 1 });
+  await setReply('signOut', { signedIn: false, account: null });
+  await emit({ type: 'open-account', signedIn: true, account: ACCOUNT, userId: '0xabab' });
+  await page.waitForSelector('.panel-account .acct-chat', { state: 'visible' });
+  await page.click('[data-delete="ffffffffffffffff"]');
+  await until(async () => (await calls('deleteChat')).length === 1, 'the delete');
+  assert.deepEqual((await calls('deleteChat'))[0].args, ['ffffffffffffffff']);
+  await page.click('[data-action="clear"]');
+  assert.equal(await page.locator('[data-action="clear"]').innerText(), 'Clear all chats?');
+  assert.equal((await calls('clearChats')).length, 0, 'the first click only asks');
+  await page.click('[data-action="clear"]');
+  await until(async () => (await calls('clearChats')).length === 1, 'the clear');
+  await page.click('[data-action="signout"]');
+  await until(async () => (await calls('signOut')).length === 1, 'sign out');
+  await emit({ type: 'account', signedIn: false, account: null, userId: 'ivanw' });
+  await page.waitForSelector('.panel-welcome', { state: 'visible' });
+  await page.keyboard.press('Escape');
 });
 
 await check('no page errors or CSP violations', async () => {

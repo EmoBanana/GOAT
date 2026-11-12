@@ -373,3 +373,45 @@ body {
   pointer-events: none;
 }
 .toast.link { cursor: pointer; text-decoration: underline dotted rgba(255, 255, 255, 0.6); }
+
+/* The current chat above the ask input, so a question can be continued. */
+.ask-thread { margin: 0 0 10px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.thread-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; color: var(--muted); font-size: 12px; }
+.thread-title { flex: 1; min-width: 0; overflow: hidden; font-weight: 600; white-space: nowrap; text-overflow: ellipsis; }
+.panel button.thread-new { padding: 3px 10px; border-radius: 999px; font-size: 12px; }
+.thread-turns { display: grid; gap: 8px; max-height: 30vh; margin: 0; padding: 0; overflow: auto; list-style: none; }
+.turn-q { color: var(--ink); font-size: 13.5px; font-weight: 600; }
+.turn-a { margin-top: 2px; color: #334155; font-size: 13px; line-height: 1.45; white-space: pre-wrap; }
+
+/* Welcome: sign in when GOAT starts without an account. */
+.panel-welcome { top: 18%; width: min(460px, calc(100vw - 48px)); padding: 22px 24px 16px; }
+.welcome-mark svg { display: block; margin-bottom: 10px; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3)); }
+.welcome-title { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
+.welcome-lead { margin: 6px 0 16px; color: var(--muted); font-size: 13.5px; line-height: 1.5; }
+.welcome-actions { display: grid; gap: 8px; }
+.panel .welcome-actions button { padding: 10px 14px; border-radius: 10px; font-size: 14px; }
+.welcome-wait { margin: 12px 0 0; color: var(--blue); font-size: 13px; }
+.welcome-foot { display: flex; align-items: center; gap: 8px; margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line); }
+.welcome-foot .spacer { flex: 1; }
+.welcome-note { color: var(--muted); font-size: 11.5px; }
+.panel button.link { padding: 0; border: 0; background: none; color: var(--blue); font-weight: 600; }
+
+/* Account, balance and chats (Ctrl+Option+A). */
+.panel-account { top: 12%; width: min(520px, calc(100vw - 48px)); }
+.acct-who { display: flex; align-items: baseline; gap: 8px; margin-top: -4px; font-size: 15px; font-weight: 600; }
+.acct-short { color: var(--muted); font-size: 12.5px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.acct-wallet { display: flex; align-items: center; gap: 10px; margin: 12px 0 14px; padding: 10px 12px; border-radius: 12px; background: #f1f5f9; }
+.acct-wallet .spacer, .acct-chats-head .spacer { flex: 1; }
+.acct-balance { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.acct-pro { color: var(--muted); font-size: 12px; }
+.acct-chats-head { display: flex; align-items: center; margin-bottom: 6px; font-size: 14px; }
+.panel button.small { padding: 4px 10px; font-size: 12px; }
+.acct-chats { display: grid; gap: 2px; max-height: 40vh; margin: 0; padding: 0; overflow: auto; list-style: none; }
+.acct-chats li { display: flex; align-items: center; gap: 4px; border-radius: 8px; }
+.acct-chats li:hover, .acct-chats li.current { background: #eff6ff; }
+.panel button.acct-chat { display: grid; flex: 1; min-width: 0; gap: 1px; padding: 7px 8px; border: 0; background: none; text-align: left; }
+.acct-chat-title { overflow: hidden; font-size: 13.5px; white-space: nowrap; text-overflow: ellipsis; }
+.acct-chat-meta { color: var(--muted); font-size: 11.5px; font-weight: 500; }
+.panel button.acct-del { flex: none; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--muted); font-size: 16px; line-height: 26px; }
+.panel button.acct-del:hover { background: rgba(220, 38, 38, 0.1); color: var(--red); }
+.acct-empty { margin: 4px 0; color: var(--muted); font-size: 13px; }

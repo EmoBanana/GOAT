@@ -1,4 +1,6 @@
 import express from 'express';
+import { mountAccount } from './account.js';
+import { mountChats } from './chats.js';
 import { HttpError } from './errors.js';
 import { mountDrafts } from './guides/draft.js';
 import { guideSummary, publicGuide } from './guides/store.js';
@@ -8,7 +10,7 @@ import { mountTimesheet } from './timesheet/routes.js';
 import { sanitizeUserId } from './users.js';
 import { mountVoice } from './voice.js';
 
-export function createApp({ config, guides, docs, llm, users, assist, mcp, projects, activity, payments = null, topups = null, logger = console }) {
+export function createApp({ config, guides, docs, llm, users, assist, mcp, projects, activity, payments = null, topups = null, chats = null, logger = console }) {
   const app = express();
   app.disable('x-powered-by');
   mountSite(app, { config }); // the download page and the app download, free and before x402
@@ -65,13 +67,17 @@ export function createApp({ config, guides, docs, llm, users, assist, mcp, proje
   });
 
   app.post('/api/assist', async (req, res) => {
-    const { question, context, image, screen, voice } = req.body || {};
-    res.json(await assist({ question, context, image, screen, voice: voice === true, tier: users.tier(req.userId), userId: req.userId }));
+    const { question, context, image, screen, voice, chatId } = req.body || {};
+    // chatId: continue that chat; null starts a new one; absent continues a fresh one.
+    const chat = typeof chatId === 'string' || chatId === null ? chatId : undefined;
+    res.json(await assist({ question, context, image, screen, voice: voice === true, tier: users.tier(req.userId), userId: req.userId, chatId: chat }));
   });
 
   if (projects && activity) mountTimesheet(app, { projects, activity });
   mountWallet(app, { config, users, payments, topups });
   mountVoice(app, { config, users, llm, projects });
+  if (chats) mountChats(app, { chats });
+  mountAccount(app, { config });
 
   app.use('/api', (req) => {
     throw new HttpError(404, 'not_found', `No route for ${req.method} ${req.originalUrl}.`);

@@ -10,7 +10,9 @@
   const DWELL_MS = 450;
   const DWELL_RADIUS = 28;
   const DEFAULT_WAIT_MS = 9000;
-  const HOTKEY_KEYS = { ask: 'G', record: 'R', capture: 'C', track: 'T', voice: 'V' };
+  const HOTKEY_KEYS = { ask: 'G', record: 'R', capture: 'C', track: 'T', voice: 'V', account: 'A' };
+  const CHAT_FRESH_MS = 30 * 60_000; // after this long, the ask panel starts a new chat
+  const THREAD_TURNS = 3; // turns of the current chat shown above the input
 
   const els = {
     cursor: document.getElementById('goat-cursor'),
@@ -34,6 +36,8 @@
     voice: false,
     heard: '',
     info: { platform: 'darwin', hotkeys: { ask: 'Ctrl+Option+G' } },
+    chat: null, // the chat being continued: { id, title, turns: [{ question, answer, source, guide }] }
+    chatAt: 0, // when it was last used
   };
 
   // ---------- event bus ----------
@@ -423,18 +427,70 @@
 
   const ASK_HTML =
     '<form class="ask-form" autocomplete="off">' +
+    '<div class="ask-thread" hidden><div class="thread-head"><span class="thread-title"></span>' +
+    '<button type="button" class="thread-new" data-action="new-chat">New chat</button></div><ol class="thread-turns"></ol></div>' +
     `<div class="ask-row"><span class="ask-icon">${ART.cursorSvg()}</span>` +
     '<input id="goat-ask-input" class="ask-input" type="text" maxlength="1000" spellcheck="false" placeholder="Ask GOAT… e.g. how do I log an issue?"></div>' +
     '<div class="ask-meta"><span class="ask-context"></span><span class="ask-hint">Enter to ask · Esc to close</span></div>' +
     '</form>';
 
+  // ---------- chats ----------
+  // Every ask joins a chat on the server; the ask panel shows the current one so a question can
+  // be continued, and the account panel (Ctrl+Option+A) reopens older ones.
+  function setChat(chat) {
+    state.chat = chat && chat.id ? { id: chat.id, title: chat.title || '', turns: Array.isArray(chat.turns) ? chat.turns.slice(-50) : [] } : null;
+    state.chatAt = Date.now();
+    emit('chat', { chat: state.chat });
+  }
+  function rememberTurn(question, reply) {
+    if (!reply || reply.error || !reply.chatId) return;
+    if (!state.chat || state.chat.id !== reply.chatId) state.chat = { id: reply.chatId, title: reply.chatTitle || question, turns: [] };
+    state.chat.turns.push({
+      question,
+      answer: reply.source === 'guide' && reply.guide ? reply.guide.intro || '' : reply.say || '',
+      source: reply.source,
+      ...(reply.guide ? { guide: { id: reply.guide.id, title: reply.guide.title } } : {}),
+    });
+    state.chatAt = Date.now();
+    emit('chat', { chat: state.chat });
+  }
+  const currentChatId = () => (state.chat ? state.chat.id : null);
+
+  function renderThread(p) {
+    const box = p.querySelector('.ask-thread');
+    const turns = state.chat ? state.chat.turns.slice(-THREAD_TURNS) : [];
+    box.hidden = !turns.length;
+    if (!turns.length) return;
+    p.querySelector('.thread-title').textContent = state.chat.title || 'This chat';
+    const list = p.querySelector('.thread-turns');
+    list.replaceChildren(
+      ...turns.map((t) => {
+        // Chat text comes from the model and the user: text only, never HTML.
+        const li = el('li', 'turn');
+        li.append(el('div', 'turn-q', t.question));
+        li.append(el('div', 'turn-a', t.source === 'guide' && t.guide ? `Showed the guide “${t.guide.title}”.` : t.answer));
+        return li;
+      }),
+    );
+    p.querySelector('#goat-ask-input').placeholder = 'Ask a follow-up…';
+    list.scrollTop = list.scrollHeight;
+  }
+
   function openAsk(opts = {}) {
     stopGuide('ask');
     hideBubble();
+    if (state.chat && Date.now() - state.chatAt > CHAT_FRESH_MS) setChat(null);
     const p = openPanel({
       name: 'ask',
       html: ASK_HTML,
       focus: '#goat-ask-input',
+      onclick: (event) => {
+        if (!event.target.closest('[data-action="new-chat"]')) return;
+        setChat(null);
+        renderThread(p);
+        p.querySelector('#goat-ask-input').placeholder = 'Ask GOAT… e.g. how do I log an issue?';
+        p.querySelector('#goat-ask-input').focus();
+      },
       onsubmit: (event) => {
         event.preventDefault();
         const question = p.querySelector('#goat-ask-input').value.trim();
@@ -447,6 +503,7 @@
     const ctx = opts.context || {};
     const where = ctx.app ? `In ${ctx.app}${ctx.title ? ` · ${ctx.title}` : ''}` : '';
     p.querySelector('.ask-context').textContent = where; // window titles are untrusted: text only
+    renderThread(p);
     emit('ask:open', { context: ctx });
     return p;
   }
@@ -549,12 +606,13 @@
     emit('ask', { question });
     let reply;
     try {
-      reply = await goat.ask(question, extra);
+      reply = await goat.ask(question, { ...(extra || {}), chatId: currentChatId() });
     } catch (err) {
       reply = { error: 'ipc_error', message: String((err && err.message) || err) };
     } finally {
       setThinking(false);
     }
+    rememberTurn(question, reply);
     handleReply(reply || { error: 'empty_reply', message: 'No answer came back.' });
     return reply;
   }
@@ -640,6 +698,9 @@
     stopSpeaking,
     resumeFollow,
     addAskExtra,
+    chat: () => (state.chat ? JSON.parse(JSON.stringify(state.chat)) : null),
+    setChat,
+    newChat: () => setChat(null),
     el,
     cursorEl: els.cursor,
     info: () => state.info,

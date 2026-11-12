@@ -35,6 +35,7 @@ const env = {
   // The app reads the Mac's real idle time: after 5 minutes without input every sample was idle
   // and the timesheet came back empty.
   GOAT_IDLE_SEC: '86400',
+  GOAT_SIGN_IN_POLL_MS: '100',
 };
 delete env.ELECTRON_RUN_AS_NODE; // see Gotchas: VS Code extension shells set it
 
@@ -81,6 +82,23 @@ try {
     await page.press('#goat-ask-input', 'Enter');
   }
 
+  let offlineWallet = null;
+  await check('first launch asks you to sign in; Continue offline gets you going', async () => {
+    await page.waitForSelector('.panel-welcome', { state: 'visible' });
+    assert.equal((await app.evaluate(() => globalThis.__goatTest.account())).signedIn, false);
+    await page.screenshot({ path: shot('electron-welcome.png') });
+    await page.click('[data-action="offline"]');
+    const info = await until(async () => {
+      const a = await app.evaluate(() => globalThis.__goatTest.account());
+      return a.signedIn && a;
+    }, 'the offline account');
+    assert.deepEqual(info.account, { method: 'local', label: 'This laptop', how: 'Offline account on this laptop', short: '' });
+    assert.equal(info.userId, 'e2e-tester', 'GOAT_USER still names the user');
+    await until(() => page.evaluate(() => window.GOATUI.state().panel === null), 'the welcome panel to close');
+    offlineWallet = (await app.evaluate(() => globalThis.__goatTest.payer())).address;
+    await page.keyboard.press('Escape');
+  });
+
   await check('the overlay window is visible and always on top', async () => {
     const s = await until(async () => {
       const w = await app.evaluate(() => globalThis.__goatTest.windowState());
@@ -119,6 +137,22 @@ try {
     assert.match(chat.body.messages.at(-1).content, /App: Google Chrome/);
     assert.match(chat.body.messages.at(-1).content, /Window: Forma Build - Issues/);
     await page.screenshot({ path: shot('electron-llm.png') });
+  });
+
+  await check('a follow-up continues the chat: the ask panel shows it and Gemma sees the earlier exchange', async () => {
+    ollama.calls.length = 0;
+    await app.evaluate(() => globalThis.__goatTest.openAsk());
+    await page.waitForSelector('.ask-thread', { state: 'visible' });
+    assert.match(await page.locator('.ask-thread').innerText(), /Why do issues need a photo\?[\s\S]*evidence/);
+    await page.fill('#goat-ask-input', 'and who checks the fix?');
+    await page.press('#goat-ask-input', 'Enter');
+    await until(() => ollama.chats().length === 1, 'the follow-up to reach Gemma');
+    const contents = ollama.chats()[0].body.messages.map((m) => m.content);
+    assert.ok(contents.includes('Why do issues need a photo?'), 'the earlier question went with it');
+    const chat = await until(() => page.evaluate(() => (window.GOATUI.chat()?.turns.length === 3 ? window.GOATUI.chat() : null)), 'three turns in the chat');
+    assert.equal(chat.turns[0].source, 'guide');
+    // The answer bubble stays up for the next check.
+    await until(() => page.evaluate(() => !document.getElementById('goat-bubble').hidden), 'the follow-up answer');
   });
 
   await check('the answer bubble follows the cursor in the real app', async () => {
@@ -306,6 +340,37 @@ try {
       'the drafted guide to play',
     );
     assert.match(await page.locator('#goat-bubble').innerText(), /Open the Markups list\./);
+    await page.keyboard.press('Escape');
+  });
+
+  await check('signing in through the browser page brings the account to the app; signing out asks again', async () => {
+    const started = await app.evaluate(() => globalThis.__goatTest.startSignIn('create'));
+    assert.equal(started.url, `${srv.url}/account/?code=${started.code}&mode=create`);
+    // What the sign-in page posts once Reown AppKit has connected the account.
+    const res = await fetch(`${srv.url}/api/account/link`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ code: started.code, address: `0x${'12'.repeat(20)}`, method: 'email', provider: 'email', email: 'pat@example.com' }),
+    });
+    assert.equal(res.status, 200);
+    const info = await until(async () => {
+      const a = await app.evaluate(() => globalThis.__goatTest.account());
+      return a.account?.method === 'email' && a;
+    }, 'the signed-in account');
+    assert.equal(info.account.label, 'pat@example.com');
+    await until(() => page.evaluate(() => /Signed in: pat@example\.com/.test(document.getElementById('goat-toasts').innerText)), 'the signed-in toast');
+    const payer = await app.evaluate(() => globalThis.__goatTest.payer());
+    assert.match(payer.address, /^0x[0-9a-fA-F]{40}$/);
+    assert.notEqual(payer.address, offlineWallet, 'the account pays from its own spending wallet');
+    await page.keyboard.press('Escape');
+
+    await app.evaluate(() => globalThis.__goatTest.openAccount());
+    await page.waitForSelector('.panel-account', { state: 'visible' });
+    assert.match(await page.locator('.panel-account').innerText(), /pat@example\.com[\s\S]*Signed in with email|Signed in with email[\s\S]*pat@example\.com/);
+    await page.screenshot({ path: shot('electron-account.png') });
+    await page.click('[data-action="signout"]');
+    await page.waitForSelector('.panel-welcome', { state: 'visible' });
+    assert.equal((await app.evaluate(() => globalThis.__goatTest.account())).signedIn, false);
     await page.keyboard.press('Escape');
   });
 

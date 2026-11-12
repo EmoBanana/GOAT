@@ -279,12 +279,96 @@ function captureStep(point) {
   if (step) send({ type: 'record:step', step, count: recorder.steps.length });
 }
 
+// ---------- account ----------
+// GOAT starts by asking you to sign in: create an account (email or social) or connect a wallet
+// with Reown AppKit in the browser, or continue offline. The account decides the user id the
+// server sees and which spending wallet pays for assists (lib/account.js).
+let accounts = null; // lib/account.js, loaded when the app is ready
+let account = null;
+let activeUser = userId;
+let signInPoll = null;
+const CHAT_ID = /^[a-f0-9]{16}$/;
+const userData = () => app.getPath('userData');
+const signedIn = () => Boolean(account) || process.env.GOAT_SKIP_SIGNIN === '1';
+const chatIdFrom = (id) => (id === null ? null : CHAT_ID.test(String(id)) ? id : undefined);
+
+async function loadSignedInAccount() {
+  accounts = await import('./lib/account.js');
+  account = accounts.loadAccount(userData());
+  activeUser = accounts.userIdFor(account, { fallback: userId });
+}
+
+function accountInfo() {
+  return { signedIn: signedIn(), account: accounts ? accounts.describeAccount(account) : null, userId: activeUser };
+}
+
+async function useAccount(next) {
+  account = next;
+  activeUser = accounts.userIdFor(account, { fallback: userId });
+  await setUpWallet();
+  send({ type: 'account', ...accountInfo() });
+  refreshTray();
+  log(account ? `Signed in (${account.method}) as ${activeUser}` : 'Signed out');
+}
+
+function stopSignInPoll() {
+  clearInterval(signInPoll);
+  signInPoll = null;
+}
+
+// Opens the sign-in page in the browser, then waits for the account to come back.
+async function startSignIn(mode) {
+  stopSignInPoll();
+  const r = await api.startSignIn();
+  if (r.error) return r;
+  const url = `${serverUrl}${r.path}&mode=${mode === 'connect' ? 'connect' : 'create'}`;
+  if (process.env.GOAT_TEST_HOOKS !== '1') await shell.openExternal(url);
+  const until = Date.now() + (r.expiresInMs || 15 * 60_000);
+  signInPoll = setInterval(async () => {
+    const got = Date.now() > until ? { expired: true } : await api.signInResult(r.code);
+    if (got.expired) {
+      stopSignInPoll();
+      send({ type: 'sign-in-expired' });
+    } else if (got.linked) {
+      stopSignInPoll();
+      await useAccount(accounts.saveAccount(userData(), got.account));
+    }
+  }, Number(process.env.GOAT_SIGN_IN_POLL_MS) || 1500);
+  return { ok: true, url, code: r.code };
+}
+
+async function continueOffline() {
+  stopSignInPoll();
+  const { loadLocalWallet } = await import('./lib/wallet.js');
+  await useAccount(accounts.saveAccount(userData(), { address: loadLocalWallet(userData()).address, method: 'local' }));
+  return accountInfo();
+}
+
+async function signOut() {
+  stopSignInPoll();
+  accounts.clearAccount(userData());
+  await useAccount(null);
+  return accountInfo();
+}
+
+// Ctrl+Option+A: your account, balance and chats (or sign-in, before there's an account).
+function openAccount() {
+  focusOverlay();
+  send({ type: signedIn() ? 'open-account' : 'open-welcome', ...accountInfo() });
+}
+
+// Asking and talking need an account first.
+const needsAccount =
+  (run) =>
+  (...args) =>
+    signedIn() ? run(...args) : openAccount();
+
 // The wallet abstraction: only main holds the key; the server only sees the address.
 async function setUpWallet() {
   try {
     payer = await createPayer({
       mode: process.env.GOAT_WALLET || 'auto',
-      dir: app.getPath('userData'),
+      dir: accounts ? accounts.walletDirFor(account, userData()) : userData(),
       env: process.env,
       network: process.env.X402_NETWORK || 'eip155:84532',
     });
@@ -292,7 +376,7 @@ async function setUpWallet() {
     console.warn(`[goat] No wallet: ${err.message}`);
     payer = { kind: 'none', address: null, fetch: globalThis.fetch };
   }
-  api = createApi({ baseUrl: serverUrl, userId, walletAddress: payer.address, fetchImpl: payer.fetch, unreachableHint });
+  api = createApi({ baseUrl: serverUrl, userId: activeUser, walletAddress: payer.address, fetchImpl: payer.fetch, unreachableHint });
   const wallet = await api.wallet();
   log(`Wallet: ${payer.kind}${wallet.balanceMyr != null ? `, RM ${wallet.balanceMyr.toFixed(2)}` : ''}${wallet.mode ? ` (${wallet.mode})` : ''}`);
 }
@@ -308,7 +392,7 @@ function registerIpc() {
   ipcMain.handle('goat:approve-timesheet', (event, date) => (fromOverlay(event) ? api.approveTimesheet(dateOrToday(date)) : { error: 'forbidden' }));
   ipcMain.handle('goat:export-csv', async (event, date) => {
     if (!fromOverlay(event)) return { error: 'forbidden' };
-    const url = `${serverUrl}/api/timesheet.csv?date=${dateOrToday(date)}&user=${encodeURIComponent(userId)}`;
+    const url = `${serverUrl}/api/timesheet.csv?date=${dateOrToday(date)}&user=${encodeURIComponent(activeUser)}`;
     if (process.env.GOAT_TEST_HOOKS !== '1') await shell.openExternal(url);
     return { ok: true, url };
   });
@@ -354,7 +438,7 @@ function registerIpc() {
       voiceScreen = null;
     }
     const context = region ? { ...askContext, region } : screenShot ? { ...askContext, region: screenShot.region } : askContext;
-    const reply = await api.assist({ question, context, image, screen: screenShot?.image, voice: payload?.voice === true });
+    const reply = await api.assist({ question, context, image, screen: screenShot?.image, voice: payload?.voice === true, chatId: chatIdFrom(payload?.chatId) });
     log(reply.error ? `ask failed: ${reply.error}` : `ask -> ${reply.source}${reply.guide ? ` (${reply.guide.id})` : ''} in ${reply.latencyMs} ms`);
     if (!reply.error) reply.where = whereItRuns(serverUrl); // "running on this laptop" only when it does
     return reply;
@@ -370,10 +454,26 @@ function registerIpc() {
   ipcMain.on('goat:log', (event, line) => {
     if (fromOverlay(event)) console.log('[overlay]', String(line).slice(0, 500));
   });
+  // Account and chats.
+  const overlayOnly = (run) => (event, ...args) => (fromOverlay(event) ? run(...args) : { error: 'forbidden', message: 'Unknown sender.' });
+  ipcMain.handle('goat:account', overlayOnly(() => accountInfo()));
+  ipcMain.handle('goat:sign-in', overlayOnly((mode) => startSignIn(mode)));
+  ipcMain.handle('goat:sign-in-offline', overlayOnly(() => continueOffline()));
+  ipcMain.handle('goat:sign-out', overlayOnly(() => signOut()));
+  ipcMain.handle('goat:chats', overlayOnly(() => api.chats()));
+  ipcMain.handle('goat:chat', overlayOnly((id) => (CHAT_ID.test(String(id)) ? api.chat(id) : { error: 'not_found', message: 'No such chat.' })));
+  ipcMain.handle('goat:delete-chat', overlayOnly((id) => (CHAT_ID.test(String(id)) ? api.deleteChat(id) : { error: 'not_found', message: 'No such chat.' })));
+  ipcMain.handle('goat:clear-chats', overlayOnly(() => api.clearChats()));
 }
 
 function registerHotkeys() {
-  const keys = { G: () => openAsk('hotkey'), R: () => toggleRecording(), T: () => toggleTracking(), V: () => toggleVoice() };
+  const keys = {
+    G: needsAccount(() => openAsk('hotkey')),
+    R: () => toggleRecording(),
+    T: () => toggleTracking(),
+    V: needsAccount(() => toggleVoice()),
+    A: () => openAccount(),
+  };
   for (const [key, run] of Object.entries(keys)) {
     if (!globalShortcut.register(accelerator(key), run)) console.warn(`[goat] ${hotkey(key)} is already taken by another app.`);
   }
@@ -393,9 +493,10 @@ function trayMenu() {
       : { label: `Start tracking (${hotkey('T')})`, click: () => toggleTracking() },
     { label: "Today's timesheet", click: () => openTimesheet() },
     { label: 'Wallet and Pro…', click: () => openWallet() },
+    { label: signedIn() ? `Account and chats (${hotkey('A')})` : `Sign in… (${hotkey('A')})`, click: () => openAccount() },
     { type: 'separator' },
     { label: `Server: ${serverUrl}`, enabled: false },
-    { label: `User: ${userId}`, enabled: false },
+    { label: `Account: ${accounts?.describeAccount(account)?.label || (signedIn() ? activeUser : 'not signed in')}`, enabled: false },
     { type: 'separator' },
     { label: 'Quit GOAT', click: () => app.quit() },
   ]);
@@ -419,9 +520,10 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   app.whenReady().then(async () => {
     if (isMac) app.dock?.hide();
+    await loadSignedInAccount();
     await setUpWallet();
     // Hold Option+Cmd to talk (GOAT_PTT=off turns the helper off; Ctrl+Option+V still works).
-    if (isMac && process.env.GOAT_PTT !== 'off') holdKeys = startHoldKeys({ onDown: () => voiceHold(true), onUp: () => voiceHold(false) });
+    if (isMac && process.env.GOAT_PTT !== 'off') holdKeys = startHoldKeys({ onDown: needsAccount(() => voiceHold(true)), onUp: () => voiceHold(false) });
     registerIpc();
     createWindow();
     createTray();
@@ -443,6 +545,11 @@ if (!app.requestSingleInstanceLock()) {
         tracking: () => ({ tracking: tracker.tracking, queued: tracker.queued }),
         wallet: () => api.wallet(),
         payer: () => ({ kind: payer.kind, address: payer.address }),
+        account: () => accountInfo(),
+        openAccount: () => openAccount(),
+        startSignIn: (mode) => startSignIn(mode),
+        continueOffline: () => continueOffline(),
+        signOut: () => signOut(),
         info: () => ({ serverUrl, packaged: app.isPackaged, version: app.getVersion(), build }),
         setFakeWindow: (value) => {
           process.env.GOAT_FAKE_WINDOW = value;
