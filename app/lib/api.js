@@ -44,5 +44,6 @@ export function createApi({ baseUrl, userId, fetchImpl = globalThis.fetch, timeo
     assist: ({ question, context }) => request('POST', '/api/assist', { question, context }),
     health: () => request('GET', '/api/health', undefined, 3000),
     me: () => request('GET', '/api/me', undefined, 5000),
+    saveGuide: (guide) => request('POST', '/api/guides', guide, 10_000),
   };
 }

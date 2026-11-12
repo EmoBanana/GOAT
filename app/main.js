@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { sampleActiveWindow } from './lib/active-window.js';
 import { createApi } from './lib/api.js';
 import { getUserId } from './lib/identity.js';
+import { buildGuide, createRecorder } from './lib/recorder.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const isMac = process.platform === 'darwin';
@@ -20,6 +21,8 @@ if (process.env.GOAT_USER_DATA) app.setPath('userData', process.env.GOAT_USER_DA
 const serverUrl = process.env.GOAT_SERVER_URL || 'http://127.0.0.1:8402';
 const userId = getUserId();
 const api = createApi({ baseUrl: serverUrl, userId });
+const recorder = createRecorder();
+let lastRecording = null;
 
 let win = null;
 let tray = null;
@@ -117,14 +120,15 @@ function focusOverlay() {
   win.focus();
 }
 
+const isSelf = (sample) => Boolean(sample) && (sample.pid === process.pid || /^(GOAT|Electron)$/i.test(sample.app));
+
 // Ask hotkey: read the frontmost window first, then take focus and open the ask panel.
 async function openAsk(source = 'hotkey') {
   if (!win || askOpening) return;
   askOpening = true;
   try {
     const sample = await sampleActiveWindow({ timeoutMs: 700 });
-    const isSelf = sample && (sample.pid === process.pid || /^(GOAT|Electron)$/i.test(sample.app));
-    if (sample && !isSelf) askContext = { app: sample.app, title: sample.title, url: sample.url || '' };
+    if (sample && !isSelf(sample)) askContext = { app: sample.app, title: sample.title, url: sample.url || '' };
     focusOverlay();
     send({ type: 'open-ask', context: askContext, source });
   } finally {
@@ -132,13 +136,49 @@ async function openAsk(source = 'hotkey') {
   }
 }
 
+// Ctrl+Option+R: start recording (Ctrl+Option+C captures while it runs), press again to stop
+// and open the save form. The overlay stays click-through while recording.
+async function toggleRecording() {
+  if (!win) return;
+  if (!recorder.recording) {
+    const sample = await sampleActiveWindow({ timeoutMs: 700 });
+    recorder.start({ app: sample && !isSelf(sample) ? sample.app : '' });
+    if (!globalShortcut.register(accelerator('C'), () => captureStep())) {
+      console.warn(`[goat] ${hotkey('C')} is taken by another app; capture from the tray menu instead.`);
+    }
+    send({ type: 'record:start', app: recorder.app });
+    log(`Recording a guide${recorder.app ? ` in ${recorder.app}` : ''}`);
+  } else {
+    globalShortcut.unregister(accelerator('C'));
+    lastRecording = recorder.stop();
+    if (lastRecording.steps.length) focusOverlay(); // the save form needs the keyboard
+    send({ type: 'record:stop', app: lastRecording.app, steps: lastRecording.steps });
+    log(`Recording stopped with ${lastRecording.steps.length} steps`);
+  }
+  refreshTray();
+}
+
+function captureStep(point) {
+  if (!recorder.recording) return;
+  const step = recorder.capture(point || screen.getCursorScreenPoint());
+  if (step) send({ type: 'record:step', step, count: recorder.steps.length });
+}
+
 function registerIpc() {
   ipcMain.handle('goat:info', () => ({
     serverUrl,
     userId,
     platform: process.platform,
-    hotkeys: { ask: hotkey('G') },
+    hotkeys: { ask: hotkey('G'), record: hotkey('R'), capture: hotkey('C'), track: hotkey('T'), voice: hotkey('V') },
   }));
+  ipcMain.handle('goat:save-guide', async (event, form) => {
+    if (!fromOverlay(event)) return { error: 'forbidden', message: 'Unknown sender.' };
+    const { width, height } = screen.getPrimaryDisplay().size;
+    const guide = buildGuide(form || {}, { app: lastRecording?.app || '', recordedOn: `${width}x${height}` });
+    const reply = await api.saveGuide(guide);
+    log(reply.error ? `save guide failed: ${reply.error}` : `saved guide ${reply.id}`);
+    return reply;
+  });
   ipcMain.handle('goat:ask', async (event, payload) => {
     if (!fromOverlay(event)) return { error: 'forbidden', message: 'Unknown sender.' };
     const question = typeof payload?.question === 'string' ? payload.question.slice(0, 1000) : '';
@@ -160,9 +200,29 @@ function registerIpc() {
 }
 
 function registerHotkeys() {
-  if (!globalShortcut.register(accelerator('G'), () => openAsk('hotkey'))) {
-    console.warn(`[goat] ${hotkey('G')} is already taken by another app.`);
+  const keys = { G: () => openAsk('hotkey'), R: () => toggleRecording() };
+  for (const [key, run] of Object.entries(keys)) {
+    if (!globalShortcut.register(accelerator(key), run)) console.warn(`[goat] ${hotkey(key)} is already taken by another app.`);
   }
+}
+
+function trayMenu() {
+  return Menu.buildFromTemplate([
+    { label: `Ask GOAT (${hotkey('G')})`, click: () => openAsk('tray') },
+    recorder.recording
+      ? { label: `Stop recording (${hotkey('R')})`, click: () => toggleRecording() }
+      : { label: `Record a guide (${hotkey('R')})`, click: () => toggleRecording() },
+    ...(recorder.recording ? [{ label: `Capture step at the mouse (${hotkey('C')})`, click: () => captureStep() }] : []),
+    { type: 'separator' },
+    { label: `Server: ${serverUrl}`, enabled: false },
+    { label: `User: ${userId}`, enabled: false },
+    { type: 'separator' },
+    { label: 'Quit GOAT', click: () => app.quit() },
+  ]);
+}
+
+function refreshTray() {
+  if (tray) tray.setContextMenu(trayMenu());
 }
 
 function createTray() {
@@ -170,16 +230,7 @@ function createTray() {
   icon.setTemplateImage(true);
   tray = new Tray(icon);
   tray.setToolTip('GOAT');
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
-      { label: `Ask GOAT (${hotkey('G')})`, click: () => openAsk('tray') },
-      { type: 'separator' },
-      { label: `Server: ${serverUrl}`, enabled: false },
-      { label: `User: ${userId}`, enabled: false },
-      { type: 'separator' },
-      { label: 'Quit GOAT', click: () => app.quit() },
-    ]),
-  );
+  refreshTray();
 }
 
 if (!app.requestSingleInstanceLock()) {
@@ -199,6 +250,9 @@ if (!app.requestSingleInstanceLock()) {
       // Lets the Electron e2e test press "hotkeys" without the keyboard.
       globalThis.__goatTest = {
         openAsk: () => openAsk('test'),
+        toggleRecording: () => toggleRecording(),
+        captureStep: (point) => captureStep(point),
+        recording: () => ({ recording: recorder.recording, steps: recorder.steps, app: recorder.app }),
         askContext: () => askContext,
         windowState: () => ({ visible: win.isVisible(), onTop: win.isAlwaysOnTop(), bounds: win.getBounds(), level: windowLevel }),
         // Stop streaming the real mouse and send a fake system cursor position instead.

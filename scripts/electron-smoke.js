@@ -117,6 +117,32 @@ try {
     }, 'the bubble to follow to (738, 538)');
   });
 
+  await check('recording a guide with the hotkeys saves it, and asking for it plays it', async () => {
+    await app.evaluate(() => globalThis.__goatTest.toggleRecording());
+    await page.waitForSelector('.rec-hud', { state: 'visible' });
+    await app.evaluate(() => globalThis.__goatTest.captureStep({ x: 220, y: 310 }));
+    await app.evaluate(() => globalThis.__goatTest.captureStep({ x: 640, y: 420 }));
+    await until(() => page.evaluate(() => document.querySelectorAll('.rec-marker').length === 2), 'two markers');
+    await app.evaluate(() => globalThis.__goatTest.toggleRecording());
+    await page.waitForSelector('.rec-form', { state: 'visible' });
+    await page.fill('[name="title"]', 'Export a PDF in Bluebeam');
+    await page.fill('[name="triggers"]', 'export a pdf, save as pdf');
+    await page.fill('[name="say-0"]', 'Open the File menu.');
+    await page.click('.rec-form button[type="submit"]');
+    await until(() => page.evaluate(() => /Saved "Export a PDF in Bluebeam"/.test(document.getElementById('goat-toasts').innerText)), 'the saved toast');
+    const saved = await srv.request('GET', '/api/guides/export-a-pdf-in-bluebeam');
+    assert.equal(saved.status, 200);
+    assert.deepEqual(saved.body.apps, ['Google Chrome'], 'the app that was frontmost when recording started');
+    assert.deepEqual(saved.body.steps.map((s) => [s.x, s.y]), [[220, 310], [640, 420]]);
+    await askThroughMain('how do I save as pdf?');
+    await until(
+      () => page.evaluate(() => window.GOATUI.state().guide?.id === 'export-a-pdf-in-bluebeam' && window.GOATUI.state().guide.landed),
+      'the recorded guide to play',
+    );
+    assert.match(await page.locator('#goat-bubble').innerText(), /Open the File menu\./);
+    await page.keyboard.press('Escape');
+  });
+
   await check('no page errors', async () => {
     assert.deepEqual(pageErrors, []);
   });

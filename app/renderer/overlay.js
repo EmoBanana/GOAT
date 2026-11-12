@@ -10,6 +10,7 @@
   const DWELL_MS = 450;
   const DWELL_RADIUS = 28;
   const DEFAULT_WAIT_MS = 9000;
+  const HOTKEY_KEYS = { ask: 'G', record: 'R', capture: 'C', track: 'T', voice: 'V' };
 
   const els = {
     cursor: document.getElementById('goat-cursor'),
@@ -163,6 +164,13 @@
       }
       requestAnimationFrame(step);
     });
+  }
+
+  // Back to riding beside the system cursor (unless a guide owns the cursor).
+  function resumeFollow() {
+    if (run) return;
+    cancelFlight();
+    state.mode = 'follow';
   }
 
   // ---------- ring ----------
@@ -352,10 +360,13 @@
     focus();
     setTimeout(focus, 60); // Electron focuses the window late
   }
+  // opts: { name, html, keyboard, focus, onclick, onsubmit, oninput, backdropCloses, onEscape }
+  let panelEscape = null;
   function openPanel(opts = {}) {
     closePanel();
     const p = els.panel;
     const keyboard = opts.keyboard !== false;
+    panelEscape = opts.onEscape || null;
     p.className = `panel interactive${opts.name ? ` panel-${opts.name}` : ''}`;
     p.innerHTML = opts.html || '';
     p.onclick = opts.onclick || null;
@@ -363,7 +374,7 @@
     p.oninput = opts.oninput || null;
     p.hidden = false;
     els.backdrop.hidden = !keyboard;
-    els.backdrop.onclick = keyboard ? () => closePanel() : null;
+    els.backdrop.onclick = keyboard && opts.backdropCloses !== false ? () => closePanel() : null;
     state.panel = { name: opts.name || 'panel', keyboard };
     if (keyboard && goat.focus) goat.focus();
     if (keyboard) focusSoon(opts.focus);
@@ -382,6 +393,7 @@
     p.oninput = null;
     els.backdrop.hidden = true;
     els.backdrop.onclick = null;
+    panelEscape = null;
     state.panel = null;
     updateClickThrough();
     emit('panel:close', { name });
@@ -498,8 +510,10 @@
   document.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape') return;
     event.preventDefault();
-    if (state.panel) closePanel();
-    else if (run) stopGuide('escape');
+    if (state.panel) {
+      if (panelEscape) panelEscape();
+      else closePanel();
+    } else if (run) stopGuide('escape');
     else hideBubble();
   });
 
@@ -535,6 +549,11 @@
     setVoice: (on) => {
       state.voice = Boolean(on);
     },
+    resumeFollow,
+    el,
+    cursorEl: els.cursor,
+    info: () => state.info,
+    hotkey: (name) => (state.info.hotkeys && state.info.hotkeys[name]) || `${state.info.platform === 'win32' ? 'Ctrl+Alt' : 'Ctrl+Option'}+${HOTKEY_KEYS[name] || '?'}`,
     state: () =>
       JSON.parse(
         JSON.stringify({

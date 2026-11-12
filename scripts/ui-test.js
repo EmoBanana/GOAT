@@ -312,6 +312,89 @@ await check("the bubble's Close button stops a guide; a click outside the panel 
   await until(async () => (await ui()).panel === null, 'the panel to close');
 });
 
+await check('recorder: HUD and numbered markers, the cursor hops to each capture', async () => {
+  await emit({ type: 'cursor', x: 1200, y: 800 });
+  await emit({ type: 'record:start', app: 'Bluebeam Revu' });
+  assert.equal(await page.locator('.rec-hud').isVisible(), true);
+  assert.match(await page.locator('.rec-hud').innerText(), /Recording a guide in Bluebeam Revu/);
+  assert.match(await page.locator('.rec-hud').innerText(), /Ctrl\+Option\+C/);
+  await emit({ type: 'record:step', step: { n: 1, x: 200, y: 300 }, count: 1 });
+  await until(async () => near(await tip(), { x: 200, y: 300 }, 0.5), 'the hop to capture 1');
+  await emit({ type: 'record:step', step: { n: 2, x: 600, y: 420 }, count: 2 });
+  await until(async () => near(await tip(), { x: 600, y: 420 }, 0.5), 'the hop to capture 2');
+  const marks = await page.evaluate(() =>
+    [...document.querySelectorAll('.rec-marker')].map((m) => {
+      const r = m.getBoundingClientRect();
+      return { n: m.textContent, x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    }),
+  );
+  assert.deepEqual(marks.map((m) => m.n), ['1', '2']);
+  assert.ok(near(marks[0], { x: 200, y: 300 }, 0.5) && near(marks[1], { x: 600, y: 420 }, 0.5), JSON.stringify(marks));
+  assert.match(await page.locator('.rec-hud').innerText(), /\(600, 420\)/);
+  await until(async () => (await ui()).mode === 'follow', 'the cursor to go back to the mouse');
+  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.rec-hud')).pointerEvents), 'none');
+  await shot('ui-06-recording');
+});
+
+await check('recorder: the save form needs a title and a trigger, then sends the guide', async () => {
+  await emit({ type: 'record:stop', app: 'Bluebeam Revu', steps: [{ n: 1, x: 200, y: 300 }, { n: 2, x: 600, y: 420 }] });
+  await page.waitForSelector('.rec-form', { state: 'visible' });
+  assert.equal(await page.locator('.rec-hud').isHidden(), true);
+  assert.equal(await page.locator('.rec-step').count(), 2);
+  assert.match(await page.locator('.form-sub').innerText(), /2 steps · recorded in Bluebeam Revu/);
+  await page.evaluate(() => (window.__calls.length = 0));
+  await page.click('.rec-form button[type="submit"]');
+  assert.equal(await page.locator('.form-error').innerText(), 'Add a title.');
+  await page.fill('[name="title"]', 'Export a PDF in Bluebeam');
+  await page.click('.rec-form button[type="submit"]');
+  assert.equal(await page.locator('.form-error').innerText(), 'Add at least one trigger phrase.');
+  assert.equal((await calls('saveGuide')).length, 0, 'nothing is sent until the form is valid');
+  await page.fill('[name="triggers"]', 'export a pdf, save as pdf');
+  await page.fill('[name="label-0"]', 'File');
+  await page.fill('[name="say-0"]', 'Open the File menu.');
+  await page.fill('[name="label-1"]', 'Export');
+  await page.mouse.click(30, 870); // a stray click on the backdrop keeps the form
+  assert.equal(await page.locator('.rec-form').isVisible(), true);
+  await shot('ui-07-save-form');
+  await setReply('saveGuide', { id: 'export-a-pdf-in-bluebeam', title: 'Export a PDF in Bluebeam', triggers: ['export a pdf', 'save as pdf'] });
+  await page.click('.rec-form button[type="submit"]');
+  const [save] = await until(async () => {
+    const c = await calls('saveGuide');
+    return c.length && c;
+  }, 'goat.saveGuide');
+  assert.deepEqual(save.args[0], {
+    title: 'Export a PDF in Bluebeam',
+    triggers: 'export a pdf, save as pdf',
+    intro: '',
+    steps: [
+      { x: 200, y: 300, label: 'File', say: 'Open the File menu.' },
+      { x: 600, y: 420, label: 'Export', say: '' },
+    ],
+  });
+  await until(async () => (await ui()).panel === null, 'the form to close');
+  await until(() => page.evaluate(() => /Try Ctrl\+Option\+G, then "export a pdf"/.test(document.getElementById('goat-toasts').innerText)), 'the trigger toast');
+  assert.equal(await page.locator('.rec-marker').count(), 0);
+});
+
+await check('recorder: Preview plays the recording, then the form comes back as it was', async () => {
+  await emit({ type: 'record:start', app: '' });
+  await emit({ type: 'record:stop', app: '', steps: [{ n: 1, x: 300, y: 300 }] });
+  await page.waitForSelector('.rec-form', { state: 'visible' });
+  await page.fill('[name="title"]', 'Preview me');
+  await page.fill('[name="say-0"]', 'Right here.');
+  await page.click('[data-action="preview"]');
+  await until(async () => (await ui()).guide?.landed, 'the preview to play');
+  assert.match((await bubble()).text, /Right here\./);
+  await page.keyboard.press('Escape');
+  await page.waitForSelector('.rec-form', { state: 'visible' });
+  assert.equal(await page.inputValue('[name="title"]'), 'Preview me');
+  assert.equal(await page.inputValue('[name="say-0"]'), 'Right here.');
+  await page.keyboard.press('Escape');
+  assert.match(await page.locator('.form-error').innerText(), /Press Esc again/);
+  await page.keyboard.press('Escape');
+  await until(async () => (await ui()).panel === null, 'the second Esc to discard');
+});
+
 await check('no page errors or CSP violations', async () => {
   assert.deepEqual(pageErrors, []);
   assert.deepEqual(await page.evaluate(() => window.__csp), []);

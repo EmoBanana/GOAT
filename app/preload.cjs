@@ -5,6 +5,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('goat', {
   ask: (question, extra) => ipcRenderer.invoke('goat:ask', { ...(extra || {}), question }),
   info: () => ipcRenderer.invoke('goat:info'),
+  saveGuide: (guide) => ipcRenderer.invoke('goat:save-guide', guide),
   setClickThrough: (on) => ipcRenderer.send('goat:click-through', Boolean(on)),
   focus: () => ipcRenderer.send('goat:focus'),
   log: (...parts) => ipcRenderer.send('goat:log', parts.map(String).join(' ')),
