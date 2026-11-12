@@ -206,8 +206,10 @@ test('user ids that would walk out of data/ are refused', () => {
 
 describe('timesheet API', () => {
   let srv;
-  const today = localDate();
-  const at = (min) => new Date(Date.now() - min * 60_000).toISOString();
+  // A fixed day: samples taken "a few minutes ago" just after midnight land on yesterday's file,
+  // while a request without a date reads today's.
+  const day = '2026-11-12';
+  const at = (min) => new Date(2026, 10, 12, 10, 30 - min).toISOString();
   before(async () => {
     srv = await startTestServer(); // no model: activities get plain lines
   });
@@ -236,7 +238,7 @@ describe('timesheet API', () => {
     ];
     const r = await srv.request('POST', '/api/activity', { user: 'pat', body: { samples } });
     assert.deepEqual(r.body, { stored: 6, dropped: 4 });
-    const file = path.join(srv.dataDir, 'activity', 'pat', `${today}.jsonl`);
+    const file = path.join(srv.dataDir, 'activity', 'pat', `${day}.jsonl`);
     const lines = fs.readFileSync(file, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
     assert.deepEqual(
       lines.map((l) => [l.kind || l.app, l.code ?? null, l.site ?? '']),
@@ -255,8 +257,8 @@ describe('timesheet API', () => {
   });
 
   test('GET /api/timesheet gives the day by project and as activities with times', async () => {
-    const r = await srv.request('GET', '/api/timesheet', { user: 'pat' });
-    assert.equal(r.body.date, today);
+    const r = await srv.request('GET', `/api/timesheet?date=${day}`, { user: 'pat' });
+    assert.equal(r.body.date, day);
     assert.deepEqual(
       r.body.entries.map((e) => [e.code, e.minutes]),
       [['ALPHA', 0.2], ['BRAVO', 0.2]],
@@ -274,9 +276,12 @@ describe('timesheet API', () => {
       ],
     );
     for (const a of r.body.activities) assert.ok(Date.parse(a.start) < Date.parse(a.end));
-    const other = await srv.request('GET', '/api/timesheet', { user: 'someone-else' });
+    const other = await srv.request('GET', `/api/timesheet?date=${day}`, { user: 'someone-else' });
     assert.deepEqual(other.body.entries, []);
     assert.deepEqual(other.body.activities, []);
+    const today = localDate();
+    const plain = await srv.request('GET', '/api/timesheet', { user: 'pat' });
+    assert.ok([today, localDate()].includes(plain.body.date), 'no date means today on the laptop');
     const bad = await srv.request('GET', '/api/timesheet?date=yesterday');
     assert.equal(bad.status, 400);
     assert.equal(bad.body.error, 'bad_date');
@@ -285,19 +290,19 @@ describe('timesheet API', () => {
   test('approve writes data/timesheets/<user>/<date>.json with the activities; the CSV works with ?user=', async () => {
     const none = await srv.request('POST', '/api/timesheet/approve', { user: 'nobody', body: {} });
     assert.equal(none.status, 400);
-    const r = await srv.request('POST', '/api/timesheet/approve', { user: 'pat', body: { date: today } });
+    const r = await srv.request('POST', '/api/timesheet/approve', { user: 'pat', body: { date: day } });
     assert.equal(r.status, 200);
     assert.ok(r.body.approved.at);
-    const saved = JSON.parse(fs.readFileSync(path.join(srv.dataDir, 'timesheets', 'pat', `${today}.json`), 'utf8'));
+    const saved = JSON.parse(fs.readFileSync(path.join(srv.dataDir, 'timesheets', 'pat', `${day}.json`), 'utf8'));
     assert.equal(saved.user, 'pat');
     assert.equal(saved.entries.length, 2);
     assert.equal(saved.activities.length, 4);
-    assert.ok((await srv.request('GET', '/api/timesheet', { user: 'pat' })).body.approved.at);
+    assert.ok((await srv.request('GET', `/api/timesheet?date=${day}`, { user: 'pat' })).body.approved.at);
 
-    const csv = await srv.request('GET', `/api/timesheet.csv?user=pat&date=${today}`);
+    const csv = await srv.request('GET', `/api/timesheet.csv?user=pat&date=${day}`);
     assert.equal(csv.status, 200);
     assert.match(csv.headers.get('content-type'), /text\/csv/);
-    assert.match(csv.headers.get('content-disposition'), new RegExp(`goat-timesheet-pat-${today}\\.csv`));
+    assert.match(csv.headers.get('content-disposition'), new RegExp(`goat-timesheet-pat-${day}\\.csv`));
     assert.match(csv.text, /^Date,User,Start,End,Minutes,Project code,Project,Activity,App,Website,Approved\r\n/);
     assert.match(csv.text, /,\d\d:\d\d,\d\d:\d\d,0\.2,BRAVO,Sample: Bravo Station,acc\.autodesk\.com: BRAVO - Forma Build \(GOAT guide “Log an issue in Forma Build”\),Google Chrome,acc\.autodesk\.com,yes\r\n/);
   });
@@ -319,7 +324,9 @@ describe('the day, described by the model', () => {
   });
 
   test('each activity gets a line from the model, once; the model sees sites and titles, never addresses', async () => {
-    const t0 = Date.now() - 10 * 60_000;
+    // 10:00 on a fixed day, so a run just after midnight doesn't put the samples on yesterday.
+    const t0 = new Date(2026, 10, 12, 10, 0).getTime();
+    const day = localDate(new Date(t0));
     const at = (s) => new Date(t0 + s * 1000).toISOString();
     const samples = [];
     for (let i = 0; i < 6; i += 1) samples.push({ ts: at(i * 10), app: 'Google Chrome', title: 'GOAT pitch - Presentation', url: 'https://www.canva.com/design/DAF1/edit?ui=x', sec: 10 });
@@ -327,7 +334,7 @@ describe('the day, described by the model', () => {
     samples.push({ ts: at(75), kind: 'guide', guide: 'Create a form', app: 'Google Chrome' });
     await srv.request('POST', '/api/activity', { user: 'ana', body: { samples } });
 
-    const r = await srv.request('GET', '/api/timesheet', { user: 'ana' });
+    const r = await srv.request('GET', `/api/timesheet?date=${day}`, { user: 'ana' });
     assert.deepEqual(
       r.body.activities.map((a) => [a.site, a.code, a.start, a.end, a.minutes, a.summary, a.described]),
       [
@@ -343,14 +350,14 @@ describe('the day, described by the model', () => {
     assert.match(prompt, /done with the GOAT guide “Create a form”/);
     assert.doesNotMatch(prompt, /DAF1|edit|ui=x|https?:/);
 
-    await srv.request('GET', '/api/timesheet', { user: 'ana' });
-    const csv = await srv.request('GET', `/api/timesheet.csv?user=ana&date=${localDate(new Date(t0))}`);
+    await srv.request('GET', `/api/timesheet?date=${day}`, { user: 'ana' });
+    const csv = await srv.request('GET', `/api/timesheet.csv?user=ana&date=${day}`);
     assert.match(csv.text, /,Worked in acc\.autodesk\.com\, with a GOAT guide\.,|,"Worked in acc\.autodesk\.com, with a GOAT guide\.",/);
     assert.equal(ollama.chats().filter((c) => c.body.messages?.[0]?.content === ACTIVITY_SYSTEM).length, 1, 'kept, not written again');
 
     // A new stretch: only it goes to the model.
     await srv.request('POST', '/api/activity', { user: 'ana', body: { samples: [{ ts: at(200), app: 'Revit', title: 'ALP-GAM-ZZ-XX-M3-S-0001.rvt', sec: 10 }] } });
-    const again = await srv.request('GET', '/api/timesheet', { user: 'ana' });
+    const again = await srv.request('GET', `/api/timesheet?date=${day}`, { user: 'ana' });
     assert.equal(again.body.activities.at(-1).summary, 'Worked in Revit.');
     const second = ollama.chats().filter((c) => c.body.messages?.[0]?.content === ACTIVITY_SYSTEM).at(-1);
     assert.equal((second.body.messages[1].content.match(/- id a/g) || []).length, 1);
