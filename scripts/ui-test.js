@@ -483,7 +483,7 @@ await check('tracking: a red dot rides with the cursor while tracking is on', as
   assert.equal(await dotShown(), false);
 });
 
-await check('timesheet: opens at once, then the day as activities with times, by project, Approve and Export CSV', async () => {
+await check('timesheet: opens at once, then the day as activities with times, by project, Export CSV and a way back (no Approve)', async () => {
   const at = (h, m) => new Date(2026, 10, 12, h, m).toISOString();
   const act = (key, start, end, minutes, site, code, summary, guides = []) => ({ key, start, end, minutes, app: 'Google Chrome', site, titles: [`${site} page`], guides, code, name: code, summary, described: true });
   const sheet = {
@@ -503,7 +503,6 @@ await check('timesheet: opens at once, then the day as activities with times, by
       act('c', at(9, 33), at(10, 48), 75, 'acc.autodesk.com', 'ALPHA', 'Created a form in Autodesk Construction Cloud with a GOAT guide.', ['Create a form']),
     ],
   };
-  await setReply('approveTimesheet', { ...sheet, approved: { at: '2026-11-12T09:00:00Z' } });
   await setReply('exportTimesheetCsv', { ok: true, url: 'http://127.0.0.1:8402/api/timesheet.csv?date=2026-11-12&user=ui-tester' });
   await page.evaluate(() => (window.__calls.length = 0));
 
@@ -519,7 +518,7 @@ await check('timesheet: opens at once, then the day as activities with times, by
   await emit({ type: 'open-timesheet', loading: true });
   await page.waitForSelector('.ts-loading', { state: 'visible' });
   assert.match(await page.locator('.ts-loading').innerText(), /Writing up your day/);
-  assert.equal(await page.locator('[data-action="approve"]').isDisabled(), true);
+  assert.equal(await page.locator('[data-action="csv"]').isDisabled(), true);
   await shot('ui-11a-timesheet-loading');
   await emit({ type: 'open-timesheet', timesheet: sheet });
   await page.waitForSelector('.ts-act', { state: 'visible' });
@@ -539,7 +538,7 @@ await check('timesheet: opens at once, then the day as activities with times, by
     ['Total', '1.85', ''],
   ]);
   assert.equal(await page.locator('.ts-note').innerText(), '0.20 h idle, not counted.');
-  assert.equal(await page.locator('.ts-status').innerText(), 'Draft');
+  assert.equal(await page.locator('[data-action="approve"]').count(), 0, 'no Approve button');
   // Docked at the bottom right like the account cards, in their look, with no backdrop.
   const box = await until(async () => {
     const b = await page.locator('#goat-panel').boundingBox();
@@ -548,13 +547,8 @@ await check('timesheet: opens at once, then the day as activities with times, by
   assert.ok(box.width > 400, JSON.stringify(box));
   assert.equal(await page.locator('#goat-backdrop').isHidden(), true, 'no backdrop');
   assert.equal(await page.evaluate(() => getComputedStyle(document.getElementById('goat-panel')).borderTopWidth), '2px');
-  assert.equal(await page.locator('#goat-panel .panel-back').count(), 0, 'opened by main: nothing to go back to');
+  assert.equal(await page.locator('#goat-panel .panel-back').innerText(), 'Account', 'opened by main, it still goes back to the account card');
   await shot('ui-11-timesheet');
-  await page.click('[data-action="approve"]');
-  await until(async () => (await page.locator('.ts-status').innerText()) === 'Approved', 'the approved status');
-  assert.deepEqual((await calls('approveTimesheet'))[0].args, ['2026-11-12']);
-  assert.equal(await page.locator('[data-action="approve"]').innerText(), 'Approve again');
-  assert.equal(await page.locator('.ts-act').count(), 3, 'the activities stay after approving');
   await page.click('[data-action="csv"]');
   assert.deepEqual((await until(async () => {
     const c = await calls('exportTimesheetCsv');
@@ -565,7 +559,10 @@ await check('timesheet: opens at once, then the day as activities with times, by
   await emit({ type: 'open-timesheet', timesheet: { ...sheet, entries: [], activities: [], unassignedMinutes: 0, totalMinutes: 0, idleMinutes: 0 } });
   await page.waitForSelector('.ts-empty', { state: 'visible' });
   assert.match(await page.locator('.ts-empty').innerText(), /Nothing tracked yet today/);
-  assert.equal(await page.locator('[data-action="approve"]').isDisabled(), true);
+  assert.equal(await page.locator('[data-action="csv"]').isDisabled(), true);
+  // "← Account" opens the account card in its place.
+  await page.click('.panel-timesheet [data-back]');
+  await page.waitForSelector('.panel-account', { state: 'visible' });
   await page.keyboard.press('Escape');
 });
 

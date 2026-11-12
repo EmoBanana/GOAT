@@ -369,8 +369,6 @@ body {
 .ts-apps { color: var(--muted); font-size: 12px; }
 .ts-note { margin-top: 8px; color: var(--muted); font-size: 12px; }
 .ts-empty { margin: 16px 0 6px; color: var(--muted); }
-.ts-status { color: var(--muted); font-size: 12.5px; font-weight: 600; }
-.ts-status.approved { color: #15803d; }
 /* The day as activities: when, what was done, the project and how long. */
 .ts-loading { margin: 14px 0 6px; color: var(--muted); font-size: 13px; }
 .ts-loading::before { content: ""; display: inline-block; width: 6px; height: 6px; margin: 0 8px 1px 0; border-radius: 50%; background: var(--blue); vertical-align: middle; animation: goat-blink 1s ease-in-out infinite; }
@@ -539,13 +537,10 @@ body {
 .panel.dock-right .wallet-sub { margin-top: 8px; color: var(--nb-soft); font: 500 11.5px/1.4 var(--mono); }
 .panel.dock-right .wallet-pro { margin-top: 14px; border: var(--nb-rule); border-radius: 0; background: var(--nb-grey); color: var(--nb-ink); }
 .panel.dock-right .form-actions { margin-top: 16px; }
-/* Timesheet: a status tag by the title, the day's activities and the projects on black rules,
-   project codes as signal-yellow tags. */
+/* Timesheet: the day's activities and the projects on black rules, project codes as signal-yellow
+   tags. */
 .panel.dock-right .form-head { align-items: center; margin-bottom: 2px; }
 .panel.dock-right .form-head strong { font-size: 19px; font-weight: 800; font-stretch: 125%; letter-spacing: -0.02em; }
-.panel.dock-right .ts-status { padding: 3px 7px; border: var(--nb-rule); color: var(--nb-ink); font: 600 10.5px/1 var(--mono); letter-spacing: 0.04em; }
-.panel.dock-right .ts-status:empty { display: none; }
-.panel.dock-right .ts-status.approved { background: #b9f5c9; }
 .panel.dock-right .ts-date { color: var(--nb-soft); font: 500 11.5px/1.4 var(--mono); }
 .panel.dock-right .ts-loading::before { border-radius: 0; }
 .panel.dock-right .ts-acts { margin-top: 14px; border-top: var(--nb-rule); }

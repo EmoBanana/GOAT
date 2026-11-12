@@ -343,7 +343,7 @@ try {
     assert.match(chat.body.messages.at(-1).content, /highlighted this part of the screen \(200×150 points\)/);
   });
 
-  await check('tracking: Canva, then a form in ACC with a GOAT guide, become timed activities; stopping shows them; approve', async () => {
+  await check('tracking: Canva, then a form in ACC with a GOAT guide, become timed activities; stopping shows them, with a way back to the account card', async () => {
     const before = ollama.state.reply;
     // The mock model writes "aN: Worked in <site or app>." for each activity it's given.
     ollama.state.reply = (body) =>
@@ -377,11 +377,8 @@ try {
       assert.match(stored, /"kind":"guide","guide":"Log an issue in Forma Build","app":"Google Chrome"/);
       assert.doesNotMatch(stored, /DAF1|ui=1|x=1|build\/forms|https?:/, 'site names only, never addresses');
       await page.screenshot({ path: shot('electron-timesheet.png') });
-      await page.click('[data-action="approve"]');
-      await until(() => page.evaluate(() => document.querySelector('.ts-status')?.textContent === 'Approved'), 'the approval');
-      const approved = fs.readdirSync(path.join(srv.dataDir, 'timesheets', 'e2e-tester'));
-      assert.equal(approved.length, 1);
-      assert.equal(JSON.parse(fs.readFileSync(path.join(srv.dataDir, 'timesheets', 'e2e-tester', approved[0]), 'utf8')).activities.length, 2);
+      assert.equal(await page.locator('#goat-panel [data-action="approve"]').count(), 0, 'no Approve button');
+      assert.equal(await page.locator('#goat-panel .panel-back').innerText(), 'Account');
       await page.click('#goat-panel [data-action="close"]'); // not the Close of the guide bubble above, now hidden
       // The account card opens today's timesheet too, through main, without tracking on and off.
       await app.evaluate(() => globalThis.__goatTest.openAccount());
@@ -389,8 +386,10 @@ try {
       await page.click('[data-action="timesheet"]');
       await page.waitForSelector('.panel-timesheet .ts-act', { state: 'visible' });
       assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('.ts-what')].map((e) => e.textContent)), acts.map(([, what]) => what));
-      assert.equal(await page.locator('.ts-status').innerText(), 'Approved');
-      await page.click('#goat-panel [data-action="close"]');
+      // "← Account" goes back to the card it came from.
+      await page.click('#goat-panel [data-back]');
+      await page.waitForSelector('.panel-account', { state: 'visible' });
+      await page.click('.panel-account [data-action="close"]');
     } finally {
       ollama.state.reply = before;
       await app.evaluate(() => globalThis.__goatTest.setFakeWindow('Google Chrome|Forma Build - Issues'));

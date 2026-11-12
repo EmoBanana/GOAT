@@ -1,6 +1,6 @@
 // Timesheet tracking UI: a red dot rides with the blue cursor while tracking, and the panel that
 // opens when tracking stops shows the day as activities (when, what was done, the project) and
-// the time by project, with Approve and Export CSV.
+// the time by project, with Export CSV and a way back to the account card.
 (function () {
   'use strict';
 
@@ -58,7 +58,7 @@
 
   const HTML =
     '<div class="ts">' +
-    '<div class="form-head"><strong>Today\'s timesheet</strong><span class="ts-status"></span></div>' +
+    '<div class="form-head"><strong>Today\'s timesheet</strong></div>' +
     '<div class="form-sub ts-date"></div>' +
     '<p class="ts-loading" hidden>Writing up your day…</p>' +
     '<ol class="ts-acts" hidden></ol>' +
@@ -67,8 +67,20 @@
     '<div class="ts-empty" hidden></div><div class="ts-note"></div>' +
     '<div class="form-error" role="alert" hidden></div>' +
     '<div class="form-actions"><button type="button" data-action="close">Close</button><span class="spacer"></span>' +
-    '<button type="button" data-action="csv">Export CSV</button><button type="button" class="primary" data-action="approve">Approve</button></div>' +
+    '<button type="button" class="primary" data-action="csv">Export CSV</button></div>' +
     '</div>';
+
+  // "← Account" however the timesheet opened (the account card, tracking stopping, the tray):
+  // the account card is where it lives. Before signing in, that's the sign-in card.
+  const TO_ACCOUNT = {
+    label: 'Account',
+    go: () => {
+      const account = window.GOATAccount;
+      if (!account) return ui.closePanel();
+      const info = account.info();
+      return info && info.signedIn === false ? account.openWelcome() : account.open();
+    },
+  };
 
   function openSheet(timesheet, back) {
     current = timesheet;
@@ -78,12 +90,11 @@
       html: HTML,
       keyboard: false,
       dock: 'right',
-      back,
+      back: back || TO_ACCOUNT,
       onclick: (event) => {
         const button = event.target.closest('[data-action]');
         if (!button || button.disabled) return;
         if (button.dataset.action === 'close') ui.closePanel();
-        if (button.dataset.action === 'approve') approve(p);
         if (button.dataset.action === 'csv') exportCsv(p);
       },
     });
@@ -119,7 +130,6 @@
 
   function render(p, t) {
     current = t;
-    const approveButton = p.querySelector('[data-action="approve"]');
     const csvButton = p.querySelector('[data-action="csv"]');
     const loading = t === null;
     p.querySelector('.ts-loading').hidden = !loading;
@@ -128,7 +138,6 @@
       const now = new Date();
       p.querySelector('.ts-date').textContent = loading ? prettyDate(`${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`) : '';
       if (!loading) showError(p, (t && t.message) || "Couldn't load the timesheet.");
-      approveButton.disabled = true;
       csvButton.disabled = true;
       return;
     }
@@ -150,21 +159,8 @@
     emptyBox.hidden = !empty;
     emptyBox.textContent = empty ? `Nothing tracked yet today. Press ${ui.hotkey('track')} to start.` : '';
     p.querySelector('.ts-note').textContent = t.idleMinutes > 0 ? `${hours(t.idleMinutes)} h idle, not counted.` : '';
-    const status = p.querySelector('.ts-status');
-    status.textContent = t.approved ? 'Approved' : 'Draft';
-    status.className = `ts-status${t.approved ? ' approved' : ''}`;
-    approveButton.disabled = empty;
-    approveButton.textContent = t.approved ? 'Approve again' : 'Approve';
     csvButton.disabled = empty;
     if (acts.length) list.scrollTop = list.scrollHeight;
-  }
-
-  async function approve(p) {
-    if (!current || !goat.approveTimesheet) return;
-    const reply = await goat.approveTimesheet(current.date);
-    if (!reply || reply.error) return showError(p, (reply && reply.message) || 'Approving failed.');
-    render(p, reply);
-    ui.toast('Timesheet approved.');
   }
 
   async function exportCsv(p) {
@@ -175,8 +171,7 @@
   }
 
   // Today's timesheet without stopping tracking (the account card opens it): the same panel,
-  // open at once and filled in when the day's lines are written.
-  // opts.back: the account card opened it ("← Account").
+  // open at once and filled in when the day's lines are written. opts.back: where "←" goes.
   async function openToday(opts = {}) {
     ui.emit('open-timesheet', { loading: true, back: opts.back });
     let t = null;
