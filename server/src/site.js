@@ -75,7 +75,11 @@ export function mountSite(app, { config }) {
   for (const [name, pkg] of Object.entries(FONT_PACKAGES)) {
     app.use(`/vendor/fonts/${name}`, express.static(path.join(modules, pkg, 'files'), vendor));
   }
-  app.get('/icon.svg', (_req, res) => res.sendFile(path.join(config.root, 'app', 'assets', 'icon.svg')));
+  // The page's own favicon when it has one (the web/ build does), else the app icon.
+  app.get('/icon.svg', (_req, res) => {
+    const own = path.join(config.siteDir, 'icon.svg');
+    res.sendFile(fs.existsSync(own) ? own : path.join(config.root, 'app', 'assets', 'icon.svg'));
+  });
 
   app.get('/api/downloads', (_req, res) => {
     res.json(downloadsView(readManifest(config.distDir), config));

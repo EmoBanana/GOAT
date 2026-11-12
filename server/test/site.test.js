@@ -146,6 +146,24 @@ test('the page, GSAP, the fonts and the icon are served from this server', async
   }
 });
 
+test('a page with its own favicon gets it at /icon.svg; others get the app icon', async () => {
+  const appIcon = await srv.request('GET', '/icon.svg');
+  assert.match(appIcon.text, /app icon/, 'no icon.svg in the page: the app icon');
+  const ownSite = path.join(tmp, 'site-with-icon');
+  fs.mkdirSync(ownSite);
+  fs.writeFileSync(path.join(ownSite, 'index.html'), '<!doctype html><title>GOAT</title>');
+  fs.writeFileSync(path.join(ownSite, 'icon.svg'), '<svg xmlns="http://www.w3.org/2000/svg"><!-- the page favicon --></svg>');
+  const withIcon = await startTestServer({ env: { GOAT_SITE_DIR: ownSite, GOAT_DIST_DIR: emptyDist } });
+  try {
+    const res = await withIcon.request('GET', '/icon.svg?v=1');
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type'), /image\/svg\+xml/);
+    assert.match(res.text, /the page favicon/);
+  } finally {
+    await withIcon.close();
+  }
+});
+
 test('without a page, / says where the downloads are', async () => {
   const res = await bare.request('GET', '/');
   assert.equal(res.status, 200);
