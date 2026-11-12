@@ -343,8 +343,6 @@ body {
 @keyframes goat-sway { 0%, 100% { transform: scaleY(0.25); } 50% { transform: scaleY(0.8); } }
 .cursor[data-voice="listening"] svg { filter: drop-shadow(0 0 6px rgba(37, 99, 235, 0.65)) drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.45)); }
 /* Spoken answers fade in word by word. */
-.bubble .text .w { opacity: 0.12; transition: opacity 140ms ease; }
-.bubble .text .w.on { opacity: 1; }
 
 /* Timesheet: red dot by the cursor while tracking, and the day's table. */
 .cursor .track-dot {

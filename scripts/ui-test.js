@@ -715,15 +715,10 @@ await check('voice: hold to talk shows a live waveform; letting go sends only th
     return c.length && c;
   }, 'the ask');
   assert.deepEqual(askCall.args, ['why do issues need a photo', { voice: true, chatId: null }]);
-  const b = await until(async () => {
-    const x = await bubble();
-    return x.visible && /You said/.test(x.text) && x;
-  }, 'the spoken answer');
-  assert.match(b.text, /You said “why do issues need a photo”/);
   // the stub has no voice of its own to send, so the Mac's voice reads the answer
   await until(() => page.evaluate(() => window.__spoken.length > 0), "the Mac's voice");
   assert.deepEqual(await page.evaluate(() => window.__spoken), [LLM_REPLY.say]);
-  await until(() => page.evaluate(() => [...document.querySelectorAll('#goat-bubble .text .w')].every((w) => w.classList.contains('on'))), 'every word revealed', 6000);
+  assert.equal((await bubble()).visible, false, 'a spoken answer is heard: no bubble');
   assert.equal((await ui()).voice, false, 'the voice turn ends with the answer');
   await shot('ui-16-voice-answer');
 });
@@ -772,17 +767,15 @@ await check('voice: a spoken question that matches a guide reads each step aloud
   await until(async () => (await ui()).guide === null, 'the guide to stop');
 });
 
-await check("voice: GOAT's own voice plays when the server sends one, the words keep pace with it, and the Mac's voice is the fallback", async () => {
+await check("voice: GOAT's own voice plays when the server sends one, with no bubble; the Mac's voice is the fallback, then the words", async () => {
   const clip = toneWav(1500).toString('base64'); // the real clips are MP3; Web Audio decodes either
   const say = 'MCP is Model Context Protocol, the open standard that connects AI assistants to tools.';
-  const words = say.split(/\s+/).length;
   const answer = (text) =>
     page.evaluate((t) => {
       window.GOATUI.setVoice(true, 'what is MCP');
       window.GOATUI.handleReply({ id: 'v1', source: 'llm', say: t, guide: null, sources: [] });
       window.GOATUI.setVoice(false);
     }, text);
-  const lit = () => page.evaluate(() => [...document.querySelectorAll('#goat-bubble .text .w')].filter((w) => w.textContent.trim() && w.classList.contains('on')).length);
   const heard = (type) => page.evaluate((t) => window.__speech.filter((e) => e.type === t), type);
   await page.evaluate(() => {
     window.__speech = [];
@@ -793,7 +786,7 @@ await check("voice: GOAT's own voice plays when the server sends one, the words 
   await setReply('speak', { audio: clip, mime: 'audio/mpeg', voice: 'elevenlabs' }, 400);
   await answer(say);
   assert.deepEqual((await calls('speak')).map((c) => c.args), [[say]], 'the text goes to main, which asks the server');
-  assert.equal(await lit(), 0, 'the words wait for the voice');
+  assert.equal((await bubble()).visible, false, 'nothing to read while the voice is on its way');
   assert.equal(await page.evaluate(() => window.GOATUI.speechPending()), true);
   const [start] = await until(async () => {
     const s = await heard('speak:start');
@@ -801,9 +794,9 @@ await check("voice: GOAT's own voice plays when the server sends one, the words 
   }, "GOAT's voice to start");
   assert.equal(start.voice, 'elevenlabs');
   assert.ok(Math.abs(start.ms - 1500) < 60, `the clip is ${start.ms} ms long`);
-  assert.ok((await lit()) < words, 'the words come one by one');
-  await until(async () => (await lit()) === words, 'every word lit by the end of the clip', 2500);
+  assert.equal((await bubble()).visible, false, 'heard, not shown');
   await until(async () => (await heard('speak:end')).length === 1, 'the clip to end', 3000);
+  assert.equal((await bubble()).visible, false);
   assert.deepEqual(await page.evaluate(() => window.__spoken), [], "the Mac's voice stayed quiet");
   await shot('ui-16b-goat-voice');
 
@@ -821,9 +814,25 @@ await check("voice: GOAT's own voice plays when the server sends one, the words 
   await answer('Second answer here.');
   await until(() => page.evaluate(() => window.__spoken.length === 1), "the Mac's voice");
   assert.deepEqual(await page.evaluate(() => window.__spoken), ['Second answer here.']);
-  await until(async () => (await lit()) === 3, 'the words of the fallback answer');
   assert.equal((await heard('speak:start')).length, 0, 'no clip was played');
+  assert.equal((await bubble()).visible, false, "the Mac's voice says it: still no bubble");
   await page.keyboard.press('Escape');
+
+  // Nothing can speak (no voice from the server, none on this Mac): the answer shows in a bubble.
+  await page.evaluate(() => {
+    window.speechSynthesis.speak = () => {
+      throw new Error('no voices installed');
+    };
+  });
+  await answer('Third answer, in words.');
+  const shown = await until(async () => {
+    const b = await bubble();
+    return b.visible && b;
+  }, 'the answer in words');
+  assert.match(shown.text, /Third answer, in words\./);
+  assert.doesNotMatch(shown.text, /You said/);
+  await page.keyboard.press('Escape');
+  await spySpeech();
   await setReply('speak', undefined);
 });
 

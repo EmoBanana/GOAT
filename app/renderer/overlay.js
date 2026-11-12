@@ -34,7 +34,6 @@
     bubble: null, // { kind }
     clickThrough: true,
     voice: false,
-    heard: '',
     info: { platform: 'darwin', hotkeys: { ask: 'Ctrl+Option+G' } },
     chat: null, // the chat being continued: { id, title, turns: [{ question, answer, source, guide }] }
     chatAt: 0, // when it was last used
@@ -233,15 +232,7 @@
       b.append(close);
     }
     if (opts.intro) b.append(el('div', 'intro', opts.intro));
-    const textEl = el('div', 'text', opts.reveal ? '' : opts.text || '');
-    b.append(textEl);
-    if (opts.reveal) {
-      layWords(textEl, opts.text || '');
-      if (opts.reveal !== 'hold') startReveal(); // 'hold': the words wait for the voice
-    } else {
-      clearInterval(revealTimer);
-      revealSpans = null;
-    }
+    b.append(el('div', 'text', opts.text || ''));
     if (opts.meta) b.append(el('div', 'meta', opts.meta));
     if (opts.sources) b.append(el('div', 'sources', opts.sources));
     if (opts.step || opts.next) {
@@ -678,8 +669,11 @@
     u.onstart = () => emit('speak:start', { text, voice: 'system' });
     u.onend = () => emit('speak:end', { text });
     u.onerror = () => emit('speak:end', { text });
-    window.speechSynthesis.speak(u);
-    if (opts.onStart) opts.onStart();
+    try {
+      window.speechSynthesis.speak(u);
+    } catch {
+      return false; // no voice to speak with
+    }
     return true;
   }
 
@@ -699,7 +693,7 @@
 
   // Speaks while voice mode is on (opts.force: always, e.g. guide steps of a spoken question):
   // in GOAT's voice when the server has one, else, or if that fails, in the Mac's.
-  // opts.onStart(ms) runs when the words start, with the clip's length when it's known.
+  // opts.onSilent() runs when neither could say it, so the words can be shown instead.
   function speak(text, opts = {}) {
     if ((!state.voice && !opts.force) || !text) return false;
     silence();
@@ -715,7 +709,7 @@
         if (!clip) {
           speech = null;
           emit('speak:end', { text }); // the wait is over; the Mac's voice starts its own turn
-          if (!speakWithMac(text, opts) && opts.onStart) opts.onStart();
+          if (!speakWithMac(text, opts) && opts.onSilent) opts.onSilent();
           return;
         }
         const node = audioCtx.createBufferSource();
@@ -730,7 +724,6 @@
         node.start();
         const ms = Math.round(clip.duration * 1000);
         emit('speak:start', { text, voice: 'elevenlabs', ms });
-        if (opts.onStart) opts.onStart(ms);
       });
     return true;
   }
@@ -749,40 +742,7 @@
     }
     emit('speak:end', { text: was.text });
   }
-  function stopSpeaking() {
-    silence();
-    startReveal(); // words still waiting for the voice appear anyway
-  }
-
-  // Spoken answers appear word by word, about as fast as they're read out. layWords puts the
-  // words down dimmed; startReveal(ms) lights them up, over the clip when its length is known.
-  let revealTimer = null;
-  let revealSpans = null; // words laid down and not started yet
-  function layWords(container, text) {
-    clearInterval(revealTimer);
-    container.replaceChildren();
-    revealSpans = String(text).split(/(\s+)/).map((w) => {
-      const span = document.createElement('span');
-      span.className = 'w';
-      span.textContent = w;
-      container.append(span);
-      return span;
-    });
-  }
-  function startReveal(clipMs) {
-    const words = revealSpans;
-    if (!words) return;
-    revealSpans = null;
-    clearInterval(revealTimer);
-    const count = words.filter((w) => w.textContent.trim()).length || 1;
-    const ms = clipMs ? clamp((clipMs * 0.92) / count, 60, 400) : 190;
-    let i = 0;
-    revealTimer = setInterval(() => {
-      while (i < words.length && !words[i].textContent.trim()) words[i++].classList.add('on');
-      if (i < words.length) words[i++].classList.add('on');
-      if (i >= words.length) clearInterval(revealTimer);
-    }, ms);
-  }
+  const stopSpeaking = silence;
 
   function handleReply(reply) {
     emit('reply', reply);
@@ -805,28 +765,15 @@
         }
       })
       .filter(Boolean);
-    const spoken = state.voice;
-    showBubble({
-      kind: 'answer',
-      intro: spoken && state.heard ? `You said “${state.heard}”` : '',
-      text: reply.say || '…',
-      sources: hosts.length ? `Sources: ${hosts.join(', ')}` : '',
-      follow: true,
-      reveal: spoken && 'hold',
-    });
-    const shown = state.bubble;
-    const said = speak(reply.say, {
-      onStart: (ms) => {
-        if (state.bubble !== shown) return;
-        startReveal(ms);
-        if (ms) {
-          // stay up until GOAT has finished saying it
-          clearTimeout(bubbleTimer);
-          bubbleTimer = setTimeout(hideBubble, Math.max(ms + 2500, 7000));
-        }
-      },
-    });
-    if (!said) startReveal();
+    const inWords = () => showBubble({ kind: 'answer', text: reply.say || '…', sources: hosts.length ? `Sources: ${hosts.join(', ')}` : '', follow: true });
+    // A typed question is answered in a bubble. A spoken one is answered aloud, with no bubble:
+    // the words only show when nothing can say them, so the answer is never lost.
+    if (!state.voice) {
+      inWords();
+      return;
+    }
+    hideBubble();
+    if (!speak(reply.say, { onSilent: inWords })) inWords();
   }
 
   async function ask(question, extra) {
@@ -918,10 +865,9 @@
     setThinking,
     toLocal,
     updateClickThrough,
-    // Voice turn on/off; heard is the transcript shown above the spoken answer.
-    setVoice: (on, heard = '') => {
+    // Voice turn on/off: while it's on, answers are spoken.
+    setVoice: (on) => {
       state.voice = Boolean(on);
-      state.heard = on ? String(heard) : '';
     },
     stopSpeaking,
     speechPending: () => Boolean(speech && !speech.node), // GOAT's voice is on its way

@@ -263,7 +263,7 @@
         return;
       }
       ui.emit('voice:transcript', { transcript: heard.transcript });
-      ui.setVoice(true, heard.transcript);
+      ui.setVoice(true);
       await ui.ask(heard.transcript, { voice: true });
     } finally {
       ui.setVoice(false);

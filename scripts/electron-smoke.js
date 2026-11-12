@@ -471,13 +471,15 @@ try {
     await app.evaluate(() => globalThis.__goatTest.voiceHold(true));
     await sleep(1500);
     await app.evaluate(() => globalThis.__goatTest.voiceHold(false));
-    await until(() => page.evaluate(() => /You said “What am I looking at here\?”/.test(document.getElementById('goat-bubble').innerText)), 'the spoken answer', 15_000);
-    const ask = ollama.chats().find((c) => c.body.messages?.at(-1)?.content?.startsWith("This picture shows the user's screen"));
+    const screenAsk = () => ollama.chats().find((c) => c.body.messages?.at(-1)?.content?.startsWith("This picture shows the user's screen"));
+    await until(() => Boolean(screenAsk()), 'the spoken question to reach Gemma', 15_000);
+    const ask = screenAsk();
     assert.ok(ask, 'the question went to Gemma with the screen around the pointer');
     assert.equal(ask.body.messages.at(-1).images.length, 1);
     assert.match(ask.body.messages[0].content, /spoken aloud/);
     const said = 'Photos are the evidence for every issue.';
     await until(() => page.evaluate((t) => window.__speech.some((e) => e.voice === 'elevenlabs' && e.text === t), said), "the answer in GOAT's voice", 8000);
+    assert.equal(await page.evaluate(() => document.getElementById('goat-bubble').hidden), true, 'a spoken answer is heard: no bubble');
     assert.ok(eleven.calls.some((c) => c.body?.text === said), 'the answer text went to ElevenLabs from the server');
     await page.screenshot({ path: shot('electron-voice.png') });
   });
