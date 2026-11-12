@@ -259,10 +259,12 @@ kbd {
 .hero {
   padding: clamp(32px, 5vh, 60px) 0 clamp(44px, 7vh, 80px);
 }
+/* Both columns start at the top: the side column (downloads, the server note) is taller than the
+   headline, and aligned to the bottom it pushed the headline down. */
 .hero-top {
   display: grid;
   gap: 24px 56px;
-  align-items: end;
+  align-items: start;
   margin-bottom: 40px;
 }
 .hero h1 {
@@ -270,10 +272,10 @@ kbd {
   font-size: clamp(2.5rem, 4.6vw, 4.1rem);
   font-weight: 800;
   font-variation-settings: 'wdth' 118;
-  line-height: 0.95;
-  letter-spacing: -0.035em;
+  line-height: 1.04;
+  letter-spacing: -0.028em;
 }
-/* The tight leading would let the highlight touch the descenders above ("you"), so the
+/* The highlight is taller than a line, so it would touch the descenders above ("you"); the
    highlighted words sit a little lower. */
 .hero h1 mark {
   position: relative;
