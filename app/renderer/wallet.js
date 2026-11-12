@@ -18,6 +18,13 @@
   const TOPUP_MYR = 10;
   const topupMyr = (w) => (w && Number(w.topupMyr) > 0 ? Number(w.topupMyr) : TOPUP_MYR);
   const topupUsd = (w) => (w && Number(w.topupUsd) > 0 ? Number(w.topupUsd) : w && Number(w.myrPerUsd) > 0 ? topupMyr(w) / Number(w.myrPerUsd) : null);
+  // A transaction's amount: "−0.001 USDC", "+1 USDC"; and when: "22:31" today, else "12 Nov".
+  const signedUsdc = (v) => `${v < 0 ? '−' : '+'}${Number(Math.abs(v).toFixed(4))} USDC`;
+  const when = (iso) => {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toDateString() === new Date().toDateString() ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  };
 
   function chipText() {
     if (!wallet || wallet.error || wallet.mode === 'off') return null;
@@ -41,6 +48,12 @@
     const w = await goat.wallet();
     if (w && !w.error) wallet = w;
     updateChip();
+    // An open wallet card shows the new balance and the payment that just went through.
+    const s = ui.state();
+    if (s.panel && s.panel.name === 'wallet') {
+      const p = document.getElementById('goat-panel');
+      if (p && p.querySelector('.wallet-tx')) render(p);
+    }
     return wallet;
   }
 
@@ -92,7 +105,8 @@
     '<div class="wallet-pro"></div>' +
     '<div class="form-error" role="alert" hidden></div>' +
     '<div class="form-actions"><button type="button" data-action="topup">Top up RM 10</button><span class="spacer"></span>' +
-    '<button type="button" class="primary" data-action="upgrade">Upgrade to Pro</button></div>';
+    '<button type="button" class="primary" data-action="upgrade">Upgrade to Pro</button></div>' +
+    '<div class="wallet-tx-head" hidden><span class="card-label">Transactions</span></div><ul class="wallet-tx"></ul>';
 
   function showError(p, text) {
     const box = p.querySelector('.form-error');
@@ -116,6 +130,33 @@
     top.disabled = w.mode === 'off';
     top.replaceChildren(`Top up ${rm(topupMyr(w))}`); // and, under it, what that is in USDC
     if (topupUsd(w)) top.append(ui.el('small', 'topup-usdc', usdc(topupUsd(w))));
+    renderTransactions(p, w);
+  }
+
+  // Recent payments and top-ups, newest first. On Base Sepolia a row opens its transaction on the
+  // explorer; the card itself never shows a hash or an address.
+  function renderTransactions(p, w) {
+    const rows = Array.isArray(w.transactions) ? w.transactions : [];
+    p.querySelector('.wallet-tx-head').hidden = !rows.length;
+    p.querySelector('.wallet-tx').replaceChildren(
+      ...rows.map((t) => {
+        const row = ui.el(t.link ? 'button' : 'div', 'wallet-tx-row');
+        if (t.link) {
+          row.type = 'button';
+          row.dataset.action = 'tx';
+          row.dataset.link = t.link;
+          row.title = 'Open on the Base Sepolia explorer';
+        }
+        const what = ui.el('span', 'wallet-tx-what');
+        const myr = Number(w.myrPerUsd) > 0 ? `${price(Math.abs(t.usd) * Number(w.myrPerUsd))} · ` : '';
+        what.append(ui.el('span', 'wallet-tx-label', t.label), ui.el('span', 'wallet-tx-meta', `${myr}${when(t.at)}`));
+        row.append(what, ui.el('span', `wallet-tx-amount${t.usd < 0 ? '' : ' in'}`, signedUsdc(t.usd)));
+        if (t.link) row.append(ui.el('span', 'wallet-tx-open', '↗'));
+        const li = ui.el('li');
+        li.append(row);
+        return li;
+      }),
+    );
   }
 
   // opts.back: opened from the account card ("← Account").
@@ -132,6 +173,10 @@
         const action = button.dataset.action;
         if (action === 'close') {
           ui.closePanel();
+          return;
+        }
+        if (action === 'tx') {
+          if (goat.openLink) goat.openLink(button.dataset.link); // main opens only Base Sepolia transactions
           return;
         }
         button.disabled = true;

@@ -592,3 +592,25 @@ body {
 .wallet-usdc { margin-top: 4px; color: var(--ink-2); font: 500 11.5px/1.4 var(--mono); }
 .panel.dock-right .wallet-usdc { margin-top: 8px; color: var(--nb-ink); font: 600 11.5px/1.4 var(--mono); }
 .panel button small.topup-usdc { display: block; margin-top: 2px; font: 500 10.5px/1.2 var(--mono); opacity: 0.75; }
+/* The wallet's recent payments and top-ups, newest first; on Base Sepolia a row opens its
+   transaction on the explorer. */
+.wallet-tx-head { margin: 14px 0 6px; }
+.wallet-tx { display: grid; gap: 1px; max-height: 28vh; margin: 0 -6px; padding: 0; overflow: auto; list-style: none; }
+.wallet-tx-row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 6px; border-radius: 8px; }
+.panel button.wallet-tx-row { padding: 6px; border: 0; border-radius: 8px; background: none; color: inherit; text-align: left; }
+.panel button.wallet-tx-row:hover { background: var(--tint); }
+.wallet-tx-what { display: grid; flex: 1; min-width: 0; gap: 1px; }
+.wallet-tx-label { font-size: 13px; font-weight: 500; }
+.wallet-tx-meta { color: var(--muted); font: 500 10.5px/1.4 var(--mono); }
+.wallet-tx-amount { font: 600 12px/1.2 var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.wallet-tx-amount.in { color: #15803d; }
+.wallet-tx-open { color: var(--blue); font: 700 13px/1 var(--font); }
+.panel.dock-right .wallet-tx { gap: 0; margin: 0; border: var(--nb-rule); }
+.panel.dock-right .wallet-tx li { border-bottom: 1px solid var(--nb-ink); }
+.panel.dock-right .wallet-tx li:last-child { border-bottom: 0; }
+.panel.dock-right .wallet-tx-row,
+.panel.dock-right button.wallet-tx-row { padding: 8px 12px; border-radius: 0; }
+.panel.dock-right button.wallet-tx-row:hover { background: var(--nb-yellow); }
+.panel.dock-right .wallet-tx-label { font-weight: 700; }
+.panel.dock-right .wallet-tx-meta { color: var(--nb-soft); }
+.panel.dock-right .wallet-tx-open { color: var(--nb-ink); }

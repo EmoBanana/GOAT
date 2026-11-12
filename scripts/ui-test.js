@@ -640,6 +640,46 @@ await check("on Base Sepolia, Top up is one faucet request: 1 USDC shown in ring
   await page.evaluate(() => new Promise((done) => setTimeout(done, 4600))); // the toasts go before the next check
 });
 
+await check('the wallet card lists recent transactions; on Base Sepolia each opens on the explorer', async () => {
+  const hash = (c) => `0x${c.repeat(64)}`;
+  const link = (c) => `https://sepolia.basescan.org/tx/${hash(c)}`;
+  const now = new Date().toISOString();
+  const chain = {
+    ...WALLET,
+    mode: 'x402',
+    explorer: 'https://sepolia.basescan.org/tx/',
+    transactions: [
+      { at: now, label: 'Assist', usd: -0.001, transaction: hash('e'), link: link('e') },
+      { at: now, label: 'Top-up', usd: 1, transaction: hash('f'), link: link('f') },
+    ],
+  };
+  await setReply('wallet', chain);
+  await emit({ type: 'open-wallet' });
+  await until(async () => (await page.locator('.wallet-tx li').count()) === 2, 'two transactions');
+  assert.ok(await page.locator('.wallet-tx-head').isVisible(), 'the Transactions heading');
+  const rows = await page.locator('.wallet-tx li').allInnerTexts();
+  assert.match(rows[0], /^Assist\s+RM 0\.0042 · \d{1,2}:\d{2}.*\s+−0\.001 USDC\s+↗$/s);
+  assert.match(rows[1], /^Top-up\s+RM 4\.20 · .+\s+\+1 USDC\s+↗$/s);
+  assert.doesNotMatch(await page.locator('#goat-panel').innerText(), /0x/, 'no hashes or addresses on the card');
+  await shot('ui-13b-wallet-transactions');
+  await page.locator('.wallet-tx-row').first().click();
+  assert.deepEqual((await calls('openLink')).at(-1).args, [link('e')]);
+  await page.click('[data-action="close"]');
+  // x402-local: the ledger's own entries, listed but with nothing to open.
+  await setReply('wallet', { ...WALLET, transactions: [{ at: now, label: 'Welcome credit', usd: 0.4762, transaction: null, link: null }] });
+  await emit({ type: 'open-wallet' });
+  await until(async () => (await page.locator('.wallet-tx li').count()) === 1, 'the local entry');
+  assert.equal(await page.locator('button.wallet-tx-row').count(), 0, 'a local entry has no link');
+  await page.click('[data-action="close"]');
+  // No transactions yet: no heading, no empty box.
+  await setReply('wallet', WALLET);
+  await emit({ type: 'open-wallet' });
+  await page.waitForSelector('.wallet-balance', { state: 'visible' });
+  await until(async () => (await page.locator('.wallet-tx li').count()) === 0, 'an empty list');
+  assert.equal(await page.locator('.wallet-tx-head').isVisible(), false);
+  await page.click('[data-action="close"]');
+});
+
 await check('a paid answer flies a coin and says "Paid 1¢"', async () => {
   await setReply('ask', { ...LLM_REPLY, payment: { success: true, transaction: `0x${'a'.repeat(64)}`, network: 'eip155:84532', payer: WALLET.address } });
   await askVia('why do issues need a photo?');

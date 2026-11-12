@@ -1,13 +1,17 @@
 import assert from 'node:assert/strict';
+import { once } from 'node:events';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import { decodePaymentResponseHeader, wrapFetchWithPaymentFromConfig } from '@x402/fetch';
 import { ExactEvmScheme } from '@x402/evm/exact/client';
+import express from 'express';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import { devWallet, ensureTreasury, topupModeFor } from '../src/payments/index.js';
+import { createLedger } from '../src/payments/ledger.js';
 import { createLocalFacilitator } from '../src/payments/local-facilitator.js';
+import { mountWallet, walletTransactions } from '../src/payments/routes.js';
 import { usdToAtomic } from '../src/payments/money.js';
 import { closedPortUrl, startMockOllama } from './helpers/mock-ollama.js';
 import { startTestServer } from './helpers/test-server.js';
@@ -130,6 +134,27 @@ describe('x402 pay-per-assist (x402-local)', () => {
     assert.equal(paidAsk.status, 200);
     assert.equal(paidAsk.body.tier, 'pro');
     assert.ok(paidAsk.headers.get('payment-response'), 'with a receipt');
+  });
+
+  test('the wallet lists its welcome credit, top-up and paid ask, newest first, with no explorer links', async () => {
+    const w = wallet('lister');
+    const first = (await w.plain(`${srv.url}/api/wallet`)).body;
+    assert.deepEqual(first.transactions.map((t) => t.label), ['Welcome credit']);
+    await w.plain(`${srv.url}/api/wallet/topup`, { myr: 10 });
+    const r = await w.paid(`${srv.url}/api/assist`, { question: 'how do I log an issue' });
+    assert.equal(r.status, 200);
+    const view = (await w.plain(`${srv.url}/api/wallet`)).body;
+    assert.deepEqual(
+      view.transactions.map((t) => [t.label, Math.round(t.usd * 10_000) / 10_000, t.link]),
+      [
+        ['Assist', -0.01, null],
+        ['Top-up', 2.381, null],
+        ['Welcome credit', 0.4762, null],
+      ],
+    );
+    assert.ok(view.transactions.every((t) => !Number.isNaN(Date.parse(t.at))));
+    const other = (await wallet('stranger').plain(`${srv.url}/api/wallet`)).body;
+    assert.deepEqual(other.transactions.map((t) => t.label), ['Welcome credit'], "only the wallet's own");
   });
 
   test('a 503 from the model is not settled', async () => {
@@ -261,6 +286,71 @@ describe('top-ups from the dev wallet', () => {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
+});
+
+test('on Base Sepolia the wallet lists only what went on chain, each with its explorer link, newest first', () => {
+  const h = (c) => `0x${c.repeat(64)}`;
+  const history = [
+    { at: '2026-11-12T13:00:00.000Z', type: 'credit', amount: '476190', reason: 'welcome credit' },
+    { at: '2026-11-12T13:01:00.000Z', type: 'debit', amount: '1000', transaction: h('1') },
+    { at: '2026-11-12T14:00:00.000Z', type: 'topup', amount: '1000000', transaction: h('a'), source: 'cdp-faucet' },
+    { at: '2026-11-12T14:01:00.000Z', type: 'settled', amount: '1000', transaction: h('b') },
+    { at: '2026-11-12T14:02:00.000Z', type: 'settled', amount: '100000', transaction: h('c') },
+  ];
+  const rows = walletTransactions(history, { mode: 'x402', proPriceUsd: 0.1 });
+  assert.deepEqual(
+    rows.map((r) => [r.label, r.usd, r.link]),
+    [
+      ['Pro upgrade', -0.1, `https://sepolia.basescan.org/tx/${h('c')}`],
+      ['Assist', -0.001, `https://sepolia.basescan.org/tx/${h('b')}`],
+      ['Top-up', 1, `https://sepolia.basescan.org/tx/${h('a')}`],
+    ],
+  );
+  assert.equal(walletTransactions(history, { mode: 'x402', proPriceUsd: 0.1, limit: 2 }).length, 2);
+  const local = walletTransactions(history, { mode: 'x402-local', proPriceUsd: 0.1 });
+  assert.deepEqual(
+    local.map((r) => [r.label, r.link]),
+    [
+      ['Assist', null],
+      ['Welcome credit', null],
+    ],
+    'x402-local: the ledger entries, never a link',
+  );
+});
+
+test('on Base Sepolia a faucet top-up joins the transactions with its explorer link', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'goat-tx-'));
+  const address = privateKeyToAccount(generatePrivateKey()).address;
+  let onChain = 0n;
+  const payments = { mode: 'x402', ledger: createLedger({ dataDir: dir }), balance: async () => onChain };
+  const tx = `0x${'e'.repeat(64)}`;
+  const topups = {
+    topup: async () => {
+      onChain += 1_000_000n;
+      return { mode: 'cdp-faucet', transaction: tx, usd: 1, myr: 4.2 };
+    },
+  };
+  const config = { payments: 'x402', network: NETWORK, myrPerUsd: 4.2, priceUsd: 0.001, proPriceUsd: 0.1, proDays: 30, topupMode: 'mock', cdp: {} };
+  const users = { get: () => ({ wallet: address }), isPro: () => false };
+  const app = express();
+  app.use(express.json());
+  app.use((req, _res, next) => {
+    req.userId = 'faucet-user';
+    next();
+  });
+  mountWallet(app, { config, users, payments, topups });
+  const server = app.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  try {
+    const res = await fetch(`http://127.0.0.1:${server.address().port}/api/wallet/topup`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ myr: 4.2 }) });
+    const body = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(body.balanceMyr, 4.2);
+    assert.deepEqual(body.transactions, [{ at: body.transactions[0].at, label: 'Top-up', usd: 1, transaction: tx, link: `https://sepolia.basescan.org/tx/${tx}` }]);
+  } finally {
+    server.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("on Base Sepolia, Top up is one faucet request (1 USDC, shown in ringgit); without CDP keys it says how to get one", async () => {
