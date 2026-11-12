@@ -5,21 +5,21 @@
       "platform": "darwin",
       "arch": "arm64",
       "file": "GOAT-0.1.0-mac-arm64.zip",
-      "bytes": 123440578,
-      "sha256": "f6580952ffa32324f93114abcea79e83b483a9a0dacff843704ab720d696d71c",
-      "serverUrl": "http://127.0.0.1:8402",
-      "builtAt": "2026-11-12T19:40:55.363Z",
-      "url": "https://so5pz7cuzgccjsw6.public.blob.vercel-storage.com/goat/GOAT-0.1.0-mac-arm64.zip?v=f6580952ffa3"
+      "bytes": 123440613,
+      "sha256": "2f32836f9035044f41114baf4e1f832f7183758d736efbb540c944ed8f620c95",
+      "serverUrl": "https://bolometrically-calorimetrical-shon.ngrok-free.dev",
+      "builtAt": "2026-11-12T19:52:47.755Z",
+      "url": "https://so5pz7cuzgccjsw6.public.blob.vercel-storage.com/goat/GOAT-0.1.0-mac-arm64.zip?v=2f32836f9035"
     },
     {
       "platform": "win32",
       "arch": "x64",
       "file": "GOAT-0.1.0-win-x64.zip",
-      "bytes": 162715899,
-      "sha256": "e7baba62ee6f33e4a3ce2e303027a0ad554f0b74121f2f4cbee1622b22d2a34e",
-      "serverUrl": "http://127.0.0.1:8402",
-      "builtAt": "2026-11-12T19:41:14.369Z",
-      "url": "https://so5pz7cuzgccjsw6.public.blob.vercel-storage.com/goat/GOAT-0.1.0-win-x64.zip?v=e7baba62ee6f"
+      "bytes": 162715923,
+      "sha256": "2f64d4616a04c4dcbd0beac672557b497b9aed0de9174d3050cb6029c74855bc",
+      "serverUrl": "https://bolometrically-calorimetrical-shon.ngrok-free.dev",
+      "builtAt": "2026-11-12T19:53:03.777Z",
+      "url": "https://so5pz7cuzgccjsw6.public.blob.vercel-storage.com/goat/GOAT-0.1.0-win-x64.zip?v=2f64d4616a04"
     }
   ],
   "pricing": {
