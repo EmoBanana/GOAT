@@ -281,7 +281,7 @@ export default function Page() {
       <footer className="foot">
         <div className="wrap foot-inner">
           <span>GOAT {version}</span>
-          <span>Built at an internal hackathon, November 2026</span>
+          <span>Built at KopiCode, November 2026</span>
         </div>
       </footer>
     </>
