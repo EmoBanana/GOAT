@@ -1,4 +1,5 @@
 import { HttpError } from '../errors.js';
+import { FAUCET_USDC, topupModeFor } from './index.js';
 import { atomicToUsd, isAddress, roundMoney, roundPrice, usdToAtomic } from './money.js';
 
 // The app sends its wallet address (never a key) in x-goat-wallet. The server links it to the
@@ -35,7 +36,9 @@ export function mountWallet(app, { config, users, payments, topups }) {
       proDays: config.proDays,
       pro: users.isPro(userId),
       proUntil: user.proUntil || null,
-      topupMode: config.topupMode,
+      topupMode: topupModeFor(config),
+      // What "Top up" adds: RM 10, or one faucet request (1 USDC) on Base Sepolia.
+      ...(topupModeFor(config) === 'cdp-faucet' ? { topupUsd: FAUCET_USDC, topupMyr: roundMoney(FAUCET_USDC * config.myrPerUsd) } : { topupMyr: 10, topupUsd: Math.round((10 / config.myrPerUsd) * 10_000) / 10_000 }),
       explorer: config.payments === 'x402' ? 'https://sepolia.basescan.org/tx/' : null,
     };
   }
@@ -48,7 +51,14 @@ export function mountWallet(app, { config, users, payments, topups }) {
     if (!payments) throw new HttpError(400, 'payments_off', 'Payments are off (GOAT_PAYMENTS=off).');
     const address = users.get(req.userId).wallet;
     if (!address) throw new HttpError(400, 'no_wallet', 'GOAT has no wallet for you yet. Restart the app.');
+    const before = payments.mode === 'x402' ? await payments.balance(address) : null;
     const topup = await topups.topup({ address, myr: req.body?.myr ?? 10 });
+    // On Base Sepolia the new balance shows once the transfer is in a block (a second or two).
+    for (let i = 0; before !== null && i < 8; i += 1) {
+      const now = await payments.balance(address);
+      if (now === null || now > before) break;
+      await new Promise((resolve) => setTimeout(resolve, 750));
+    }
     res.json({ ...(await walletView(req.userId)), topup });
   });
 

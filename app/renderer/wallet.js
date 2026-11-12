@@ -1,6 +1,6 @@
 // The wallet abstraction in the UI: a ringgit chip in the ask panel, a wallet card with Top up and
-// Upgrade to Pro, and a coin flying off the cursor after each paid ask (x402 underneath).
-// Users never see an address.
+// Upgrade to Pro, and a coin flying off the cursor after each paid ask (x402 underneath). The
+// card shows the USDC behind the ringgit and the rate; users never see an address.
 (function () {
   'use strict';
 
@@ -13,10 +13,15 @@
   // Prices can be under a cent or a sen: "Paid 0.1¢", "RM 0.0042 per assist".
   const price = (v) => (v > 0 && v < 0.01 ? `RM ${Number(Number(v).toFixed(4))}` : rm(v));
   const cents = () => Number((((wallet && wallet.priceUsd) || 0.01) * 100).toFixed(2));
+  const usdc = (v) => (v === null || v === undefined ? '– USDC' : `${Number(v).toFixed(2)} USDC`);
+  // What "Top up" adds, from the server: RM 10, or one faucet request (1 USDC) on Base Sepolia.
+  const TOPUP_MYR = 10;
+  const topupMyr = (w) => (w && Number(w.topupMyr) > 0 ? Number(w.topupMyr) : TOPUP_MYR);
+  const topupUsd = (w) => (w && Number(w.topupUsd) > 0 ? Number(w.topupUsd) : w && Number(w.myrPerUsd) > 0 ? topupMyr(w) / Number(w.myrPerUsd) : null);
 
   function chipText() {
     if (!wallet || wallet.error || wallet.mode === 'off') return null;
-    return wallet.pro ? 'Pro' : rm(wallet.balanceMyr);
+    return wallet.pro ? `${rm(wallet.balanceMyr)} · Pro` : rm(wallet.balanceMyr); // Pro still pays per assist
   }
 
   function updateChip() {
@@ -26,6 +31,7 @@
     chip.hidden = !text;
     chip.textContent = text || '';
     chip.classList.toggle('pro', Boolean(wallet && wallet.pro));
+    chip.title = wallet && wallet.balanceUsd !== null && wallet.balanceUsd !== undefined ? `${usdc(wallet.balanceUsd)} in your GOAT wallet` : 'Your GOAT wallet';
     const low = Boolean(wallet && !wallet.pro && wallet.balanceMyr !== null && wallet.balanceMyr < (wallet.priceMyr || 0.04) * 3);
     chip.classList.toggle('low', low);
   }
@@ -82,7 +88,7 @@
   const HTML =
     '<div class="card-head"><div class="card-title">Wallet</div>' +
     '<button type="button" class="x" data-action="close" aria-label="Close">×</button></div>' +
-    '<div class="wallet-balance"></div><div class="wallet-sub"></div>' +
+    '<div class="wallet-balance"></div><div class="wallet-usdc"></div><div class="wallet-sub"></div>' +
     '<div class="wallet-pro"></div>' +
     '<div class="form-error" role="alert" hidden></div>' +
     '<div class="form-actions"><button type="button" data-action="topup">Top up RM 10</button><span class="spacer"></span>' +
@@ -97,13 +103,19 @@
   function render(p) {
     const w = wallet || {};
     p.querySelector('.wallet-balance').textContent = w.mode === 'off' ? 'Free' : rm(w.balanceMyr);
+    // The same money in USDC, the coin it's paid in, and the rate it's shown at.
+    const coins = w.mode === 'off' || w.balanceUsd === null || w.balanceUsd === undefined ? '' : `${usdc(w.balanceUsd)}${w.mode === 'x402' ? ' on Base Sepolia' : ''}`;
+    p.querySelector('.wallet-usdc').textContent = coins && w.myrPerUsd ? `${coins} · 1 USDC = ${rm(w.myrPerUsd)}` : coins;
     p.querySelector('.wallet-sub').textContent = w.mode === 'off' ? 'Assists are free on this server.' : `${price(w.priceMyr)} per assist`;
     const until = w.proUntil ? new Date(w.proUntil).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '';
     p.querySelector('.wallet-pro').textContent = w.pro
-      ? `Pro until ${until}: unlimited assists and voice.`
-      : `Pro: unlimited assists and voice, ${price(w.proPriceMyr)} for ${w.proDays || 30} days.`;
+      ? `Pro until ${until}: the better model and voice mode. Each assist is still ${price(w.priceMyr)}.`
+      : `Pro: the better model and voice mode, ${price(w.proPriceMyr)} for ${w.proDays || 30} days. Each assist is still ${price(w.priceMyr)}.`;
     p.querySelector('[data-action="upgrade"]').textContent = w.pro ? 'Extend Pro' : 'Upgrade to Pro';
-    p.querySelector('[data-action="topup"]').disabled = w.mode === 'off';
+    const top = p.querySelector('[data-action="topup"]');
+    top.disabled = w.mode === 'off';
+    top.replaceChildren(`Top up ${rm(topupMyr(w))}`); // and, under it, what that is in USDC
+    if (topupUsd(w)) top.append(ui.el('small', 'topup-usdc', usdc(topupUsd(w))));
   }
 
   // opts.back: opened from the account card ("← Account").
@@ -125,10 +137,15 @@
         button.disabled = true;
         showError(p, '');
         if (action === 'topup') {
-          const r = goat.topup ? await goat.topup(10) : { error: 'unavailable', message: 'Top-ups are not available.' };
+          const r = goat.topup ? await goat.topup(topupMyr(wallet)) : { error: 'unavailable', message: 'Top-ups are not available.' };
           if (r && !r.error) {
             wallet = r;
-            ui.toast('Topped up RM 10');
+            // "Topped up 2.38 USDC (RM 10.00)"; on Base Sepolia it opens the transfer.
+            const t = r.topup || {};
+            const usd = t.usd ?? topupUsd(r);
+            const myr = t.myr ?? topupMyr(r);
+            const onChain = Boolean(r.explorer) && /^0x[0-9a-f]{64}$/i.test(t.transaction || '');
+            ui.toast(usd ? `Topped up ${usdc(usd)} (${rm(myr)})` : `Topped up ${rm(myr)}`, { ms: 4500, link: onChain ? `${r.explorer}${t.transaction}` : null });
           } else {
             showError(p, (r && r.message) || 'The top-up failed.');
           }

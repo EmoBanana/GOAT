@@ -1,9 +1,14 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import { decodePaymentResponseHeader, wrapFetchWithPaymentFromConfig } from '@x402/fetch';
 import { ExactEvmScheme } from '@x402/evm/exact/client';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
+import { devWallet, ensureTreasury, topupModeFor } from '../src/payments/index.js';
 import { createLocalFacilitator } from '../src/payments/local-facilitator.js';
+import { usdToAtomic } from '../src/payments/money.js';
 import { closedPortUrl, startMockOllama } from './helpers/mock-ollama.js';
 import { startTestServer } from './helpers/test-server.js';
 
@@ -106,7 +111,7 @@ describe('x402 pay-per-assist (x402-local)', () => {
     }
   });
 
-  test('Pro users ask without paying, and the upgrade itself is paid with x402', async () => {
+  test('the upgrade to Pro is paid with x402, and Pro users still pay for each assist', async () => {
     const w = wallet('upgrader');
     await w.plain(`${srv.url}/api/wallet/topup`, { myr: 10 });
     const unpaid = await w.plain(`${srv.url}/api/pro/upgrade`, {});
@@ -119,9 +124,12 @@ describe('x402 pay-per-assist (x402-local)', () => {
     assert.ok(up.body.proUntil > Date.now() + 29 * 86_400_000);
     const me = await w.plain(`${srv.url}/api/me`);
     assert.equal(me.body.tier, 'pro');
-    const free = await w.plain(`${srv.url}/api/assist`, { question: 'how do I log an issue' });
-    assert.equal(free.status, 200, 'no payment needed once Pro');
-    assert.equal(free.headers.get('payment-response'), null);
+    const unpaidAsk = await w.plain(`${srv.url}/api/assist`, { question: 'how do I log an issue' });
+    assert.equal(unpaidAsk.status, 402, 'Pro buys the better model and voice, not free asks');
+    const paidAsk = await w.paid(`${srv.url}/api/assist`, { question: 'how do I log an issue' });
+    assert.equal(paidAsk.status, 200);
+    assert.equal(paidAsk.body.tier, 'pro');
+    assert.ok(paidAsk.headers.get('payment-response'), 'with a receipt');
   });
 
   test('a 503 from the model is not settled', async () => {
@@ -182,4 +190,94 @@ test('the local facilitator checks the signature, recipient, amount and expiry',
   const later = createLocalFacilitator({ network: NETWORK, ledger, now: () => Date.now() + 10 * 60_000 });
   assert.match((await later.verify(signed, requirements)).invalidReason, /valid_before/);
   assert.deepEqual(await facilitator.getSupported(), { kinds: [{ x402Version: 2, scheme: 'exact', network: NETWORK }], extensions: [], signers: {} });
+});
+
+describe('top-ups from the dev wallet', () => {
+  let ollama;
+  before(async () => {
+    ollama = await startMockOllama();
+  });
+  after(async () => {
+    await ollama.close();
+  });
+  const devServer = (devKey) => startTestServer({ ollamaUrl: ollama.url, env: { ...PAID, GOAT_WELCOME_CREDIT_MYR: '0', TOPUP_MODE: 'treasury', TREASURY_PRIVATE_KEY: devKey } });
+
+  test('RM 10 becomes USDC the dev wallet signs over to the spending wallet, settled by the facilitator', async () => {
+    const devKey = generatePrivateKey();
+    const dev = privateKeyToAccount(devKey);
+    const srv = await devServer(devKey);
+    try {
+      srv.payments.ledger.credit(dev.address, 5_000_000n, 'test USDC');
+      const w = wallet('topper');
+      const top = await w.plain(`${srv.url}/api/wallet/topup`, { myr: 10 });
+      assert.equal(top.status, 200);
+      assert.equal(top.body.topup.mode, 'treasury');
+      assert.equal(top.body.topup.myr, 10);
+      assert.equal(top.body.topup.usd, 10 / 4.2);
+      assert.match(top.body.topup.transaction, /^0x[0-9a-f]{64}$/);
+      const atomic = usdToAtomic(10 / 4.2);
+      assert.equal(srv.payments.ledger.balance(w.account.address), atomic);
+      assert.equal(srv.payments.ledger.balance(dev.address), 5_000_000n - atomic, 'taken from the dev wallet');
+      assert.equal(top.body.balanceMyr, 10);
+      assert.equal(top.body.balanceUsd, 2.381);
+      assert.equal(top.body.topupMode, 'treasury');
+      const ok = await w.paid(`${srv.url}/api/assist`, { question: 'how do I log an issue' });
+      assert.equal(ok.status, 200, 'and it pays for an assist');
+    } finally {
+      await srv.close();
+    }
+  });
+
+  test('an empty dev wallet says so, with its address and where to get test USDC', async () => {
+    const devKey = generatePrivateKey();
+    const srv = await devServer(devKey);
+    try {
+      const w = wallet('unlucky');
+      const top = await w.plain(`${srv.url}/api/wallet/topup`, { myr: 10 });
+      assert.equal(top.status, 400);
+      assert.equal(top.body.error, 'dev_wallet_empty');
+      assert.match(top.body.message, /has 0\.00 USDC; this one needs 2\.38 USDC/);
+      assert.ok(top.body.message.includes(privateKeyToAccount(devKey).address));
+      assert.match(top.body.message, /faucet\.circle\.com/);
+      assert.equal(srv.payments.ledger.balance(w.account.address), 0n);
+    } finally {
+      await srv.close();
+    }
+  });
+
+  test("in x402 a top-up asks Coinbase's faucet; the dev wallet is TREASURY_PRIVATE_KEY, else GOAT's treasury", () => {
+    assert.equal(topupModeFor({ topupMode: 'mock', payments: 'x402' }), 'cdp-faucet');
+    assert.equal(topupModeFor({ topupMode: 'treasury', payments: 'x402' }), 'treasury');
+    assert.equal(topupModeFor({ topupMode: 'mock', payments: 'x402-local' }), 'mock');
+    assert.equal(topupModeFor({ topupMode: 'cdp-faucet', payments: 'x402' }), 'cdp-faucet');
+    const key = generatePrivateKey();
+    assert.equal(devWallet({ treasuryKey: key }).address, privateKeyToAccount(key).address);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'goat-dev-'));
+    try {
+      assert.equal(devWallet({ treasuryKey: '', payTo: '', dataDir: dir }).address, ensureTreasury(dir).address, "GOAT's own treasury");
+      assert.equal(devWallet({ treasuryKey: '', payTo: `0x${'1'.repeat(40)}`, dataDir: dir }), null, "someone else's payTo: no key");
+      assert.throws(() => devWallet({ treasuryKey: 'nope' }), /not a private key/);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test("on Base Sepolia, Top up is one faucet request (1 USDC, shown in ringgit); without CDP keys it says how to get one", async () => {
+  const closed = await closedPortUrl();
+  const srv = await startTestServer({ env: { GOAT_PAYMENTS: 'x402', MYR_PER_USD: '4.20', BASE_SEPOLIA_RPC: closed, X402_FACILITATOR_URL: closed, CDP_API_KEY_ID: '', CDP_API_KEY_SECRET: '' } });
+  try {
+    const w = wallet('faucet');
+    const view = (await w.plain(`${srv.url}/api/wallet`)).body;
+    assert.equal(view.topupMode, 'cdp-faucet');
+    assert.equal(view.topupUsd, 1);
+    assert.equal(view.topupMyr, 4.2);
+    assert.equal(view.balanceMyr, null, 'the chain is out of reach: no made-up balance');
+    const top = await w.plain(`${srv.url}/api/wallet/topup`, { myr: 4.2 });
+    assert.equal(top.status, 400);
+    assert.equal(top.body.error, 'topup_unavailable');
+    assert.match(top.body.message, /CDP_API_KEY_ID and CDP_API_KEY_SECRET.*portal\.cdp\.coinbase\.com/);
+  } finally {
+    await srv.close();
+  }
 });

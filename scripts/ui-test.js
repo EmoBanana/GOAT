@@ -583,6 +583,8 @@ const WALLET = {
   pro: false,
   proUntil: null,
   topupMode: 'mock',
+  topupMyr: 10,
+  topupUsd: 2.381,
   explorer: null,
 };
 
@@ -596,22 +598,48 @@ await check('wallet: a ringgit chip in the ask panel; the wallet panel tops up a
   await page.waitForSelector('.wallet-balance', { state: 'visible' });
   assert.equal(await page.locator('.wallet-balance').innerText(), 'RM 9.96');
   assert.equal(await page.locator('.wallet-sub').innerText(), 'RM 0.04 per assist');
-  assert.doesNotMatch(await page.locator('#goat-panel').innerText(), /x402|ledger|USDC/, 'no plumbing in the wallet');
+  assert.equal(await page.locator('.wallet-usdc').innerText(), '2.37 USDC · 1 USDC = RM 4.20', 'the USDC behind the ringgit');
+  assert.match(await page.locator('[data-action="topup"]').innerText(), /^Top up RM 10\.00\s+2\.38 USDC$/);
+  assert.doesNotMatch(await page.locator('#goat-panel').innerText(), /x402|ledger/, 'no plumbing in the wallet');
   assert.doesNotMatch(await page.locator('#goat-panel').innerText(), /0x0000/, 'users never see an address');
-  await setReply('topup', { ...WALLET, balanceMyr: 19.96, balanceUsd: 4.7524 });
+  await setReply('topup', { ...WALLET, balanceMyr: 19.96, balanceUsd: 4.7524, topup: { mode: 'mock', usd: 10 / 4.2, myr: 10 } });
   await page.click('[data-action="topup"]');
   await until(async () => (await page.locator('.wallet-balance').innerText()) === 'RM 19.96', 'the topped-up balance');
+  assert.equal(await page.locator('.wallet-usdc').innerText(), '4.75 USDC · 1 USDC = RM 4.20');
   assert.deepEqual((await calls('topup'))[0].args, [10]);
+  await until(() => page.evaluate(() => /Topped up 2\.38 USDC \(RM 10\.00\)/.test(document.getElementById('goat-toasts').innerText)), 'the top-up toast in USDC and ringgit');
   const proUntil = Date.now() + 30 * 86_400_000;
   await setReply('upgradePro', { tier: 'pro', pro: true, proUntil, payment: { success: true, transaction: `0x${'b'.repeat(64)}`, network: 'eip155:84532' } });
-  await setReply('wallet', { ...WALLET, balanceMyr: 15.76, pro: true, proUntil });
+  await setReply('wallet', { ...WALLET, balanceMyr: 15.76, balanceUsd: 3.7524, pro: true, proUntil });
   await page.click('[data-action="upgrade"]');
   await until(() => page.evaluate(() => /Pro until/.test(document.getElementById('goat-toasts').innerText)), 'the Pro toast');
   assert.equal(await page.locator('[data-action="upgrade"]').innerText(), 'Extend Pro');
-  assert.match(await page.locator('.wallet-pro').innerText(), /^Pro until .+: unlimited assists and voice\.$/);
+  assert.match(await page.locator('.wallet-pro').innerText(), /^Pro until .+: the better model and voice mode\. Each assist is still RM 0\.04\.$/);
   await shot('ui-13-wallet-panel');
   await page.click('[data-action="close"]');
   await setReply('wallet', WALLET);
+});
+
+await check("on Base Sepolia, Top up is one faucet request: 1 USDC shown in ringgit, linked to the transfer", async () => {
+  const chain = { ...WALLET, mode: 'x402', topupMode: 'cdp-faucet', topupMyr: 4.2, topupUsd: 1, explorer: 'https://sepolia.basescan.org/tx/' };
+  await setReply('wallet', chain);
+  await emit({ type: 'open-wallet' });
+  await page.waitForSelector('.wallet-usdc', { state: 'visible' });
+  await until(async () => (await page.locator('.wallet-usdc').innerText()) === '2.37 USDC on Base Sepolia · 1 USDC = RM 4.20', 'the USDC on chain');
+  assert.match(await page.locator('[data-action="topup"]').innerText(), /^Top up RM 4\.20\s+1\.00 USDC$/);
+  assert.match(await page.locator('.wallet-pro').innerText(), /Each assist is still RM 0\.04\.$/, 'Pro still pays per assist');
+  const tx = `0x${'d'.repeat(64)}`;
+  await setReply('topup', { ...chain, balanceMyr: 14.16, balanceUsd: 3.3714, topup: { mode: 'cdp-faucet', transaction: tx, usd: 1, myr: 4.2 } });
+  await page.click('[data-action="topup"]');
+  assert.deepEqual((await calls('topup')).at(-1).args, [4.2]);
+  const toast = await until(async () => {
+    const t = await page.evaluate(() => [...document.querySelectorAll('#goat-toasts .toast.link')].map((e) => e.textContent).find((x) => /Topped up/.test(x)));
+    return t || null;
+  }, 'the linked top-up toast');
+  assert.equal(toast, 'Topped up 1.00 USDC (RM 4.20)');
+  await page.click('[data-action="close"]');
+  await setReply('wallet', WALLET);
+  await page.evaluate(() => new Promise((done) => setTimeout(done, 4600))); // the toasts go before the next check
 });
 
 await check('a paid answer flies a coin and says "Paid 1¢"', async () => {

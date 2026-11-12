@@ -106,7 +106,8 @@
     if (!w || w.error) return;
     p.querySelector('.acct-balance').textContent = w.mode === 'off' ? 'Free' : rm(w.balanceMyr);
     const until = w.proUntil ? new Date(w.proUntil).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '';
-    p.querySelector('.acct-pro').textContent = w.pro ? `Pro until ${until}` : w.mode === 'off' ? '' : `${price(w.priceMyr)} per assist`;
+    const coins = w.mode === 'off' || w.balanceUsd === null || w.balanceUsd === undefined ? '' : `${Number(w.balanceUsd).toFixed(2)} USDC · `;
+    p.querySelector('.acct-pro').textContent = w.pro ? `${coins}Pro until ${until}` : w.mode === 'off' ? '' : `${coins}${price(w.priceMyr)} per assist`;
   }
 
   // Today's timesheet is a click away, tracking or not.

@@ -55,8 +55,9 @@ test('the app pays for asks with x402, shows receipts, tops up and upgrades to P
     assert.equal(pro.tier, 'pro');
     assert.equal(pro.payment.success, true);
     assert.equal((await api.me()).tier, 'pro');
-    const free = await api.assist({ question: 'how do I log an issue', context: {} });
-    assert.equal(free.payment, undefined, 'Pro asks are free');
+    const proAsk = await api.assist({ question: 'how do I log an issue', context: {} });
+    assert.equal(proAsk.tier, 'pro');
+    assert.equal(proAsk.payment.success, true, 'Pro still pays for each assist');
   } finally {
     await srv.close();
     await ollama.close();

@@ -22,7 +22,7 @@ export function createApp({ config, guides, docs, llm, users, assist, mcp, proje
     next();
   });
   app.use(walletLinker({ config, users, payments }));
-  // x402: POST /api/assist and POST /api/pro/upgrade need a payment (Pro users ask free).
+  // x402: POST /api/assist and POST /api/pro/upgrade need a payment (Pro users pay per assist too).
   if (payments) app.use(payments.middleware);
 
   app.get('/api/health', async (_req, res) => {
