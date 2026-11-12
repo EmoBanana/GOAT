@@ -8,7 +8,6 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import electronPath from 'electron';
 import { _electron as electron } from 'playwright';
-import { DEFAULT_MODEL } from '../server/src/config.js';
 import { startMockOllama } from '../server/test/helpers/mock-ollama.js';
 import { startTestServer } from '../server/test/helpers/test-server.js';
 
@@ -132,7 +131,7 @@ try {
     ollama.calls.length = 0;
     await askThroughMain('Why do issues need a photo?');
     await until(() => page.evaluate(() => /evidence/.test(document.getElementById('goat-bubble').innerText)), 'the answer bubble');
-    assert.ok((await page.locator('#goat-bubble').innerText()).includes(`${DEFAULT_MODEL} · running on this laptop`));
+    assert.doesNotMatch(await page.locator('#goat-bubble').innerText(), /running on|gemma|x402/i, 'answers carry no credit line');
     const [chat] = ollama.chats();
     assert.match(chat.body.messages.at(-1).content, /App: Google Chrome/);
     assert.match(chat.body.messages.at(-1).content, /Window: Forma Build - Issues/);
@@ -211,7 +210,7 @@ try {
     await until(() => page.evaluate(() => document.querySelector('.ask-context')?.textContent === 'Asking about the highlighted area'), 'the locked highlight');
     await page.keyboard.type('what is this?');
     await page.keyboard.press('Enter');
-    await until(() => page.evaluate(() => /read the highlighted area/.test(document.getElementById('goat-bubble').innerText)), 'the answer about the area');
+    await until(() => ollama.chats().some((c) => c.body.messages.at(-1).images), 'the area to reach Gemma');
     const [chat] = ollama.chats();
     assert.equal(chat.body.messages.at(-1).images.length, 1);
     assert.match(chat.body.messages.at(-1).content, /highlighted this part of the screen \(200×150 points\)/);
@@ -240,7 +239,7 @@ try {
     assert.match(payer.address, /^0x[0-9a-fA-F]{40}$/);
     const before = await app.evaluate(() => globalThis.__goatTest.wallet());
     await askThroughMain('how do I log an issue?');
-    await until(() => page.evaluate(() => /1¢ paid via x402/.test(document.getElementById('goat-toasts').innerText)), 'the payment toast');
+    await until(() => page.evaluate(() => /Paid 1¢/.test(document.getElementById('goat-toasts').innerText)), 'the payment toast');
     const after = await app.evaluate(() => globalThis.__goatTest.wallet());
     assert.equal(Math.round((before.balanceUsd - after.balanceUsd) * 100), 1, 'one cent');
     await page.keyboard.press('Escape');
@@ -252,7 +251,7 @@ try {
     await page.click('[data-action="topup"]');
     await until(async () => (await page.locator('.wallet-balance').innerText()) !== balance, 'the top-up');
     await page.click('[data-action="upgrade"]');
-    await until(() => page.evaluate(() => /You're on GOAT Pro until/.test(document.getElementById('goat-toasts').innerText)), 'the Pro upgrade');
+    await until(() => page.evaluate(() => /Pro until/.test(document.getElementById('goat-toasts').innerText)), 'the Pro upgrade');
     const me = await srv.request('GET', '/api/me', { user: 'e2e-tester' });
     assert.equal(me.body.tier, 'pro');
     await page.screenshot({ path: shot('electron-wallet.png') });

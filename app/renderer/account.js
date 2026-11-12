@@ -1,6 +1,6 @@
-// Your account, balance and chats (Ctrl+Option+A), and the welcome panel that asks you to sign
-// in when GOAT starts without an account. Signing in happens in the browser with Reown AppKit
-// (create an account with email or a social login, or connect a wallet); main waits for it.
+// Your account, balance and chats (Ctrl+Option+A), and the sign-in card shown when GOAT starts
+// without an account. Both are small cards docked under the menu bar that leave the screen
+// usable. Signing in happens in the browser (Reown AppKit); main waits for it.
 (function () {
   'use strict';
 
@@ -20,31 +20,33 @@
   }
 
   // ---------- welcome: sign in or continue offline ----------
+  // A small card under the menu bar, not a modal: the apps around it keep working.
   const WELCOME_HTML =
-    '<div class="welcome">' +
-    `<div class="welcome-mark">${window.GOATArt ? window.GOATArt.cursorSvg({ size: 34 }) : ''}</div>` +
-    '<div class="welcome-title">Welcome to GOAT</div>' +
-    '<p class="welcome-lead">Create an account or connect a wallet to start. Your balance, Pro and chats follow your account.</p>' +
+    '<div class="card-head"><div class="card-title">Sign in to GOAT</div>' +
+    '<button type="button" class="x" data-action="dismiss" aria-label="Close">×</button></div>' +
+    '<p class="card-lead">Your balance, Pro and chats follow your account.</p>' +
     '<div class="welcome-actions">' +
     '<button type="button" class="primary" data-action="create">Create account</button>' +
     '<button type="button" data-action="connect">Connect wallet</button></div>' +
-    '<p class="welcome-wait" hidden>Finish signing in in your browser. GOAT carries on as soon as you’re done.</p>' +
+    '<p class="welcome-wait" hidden>Finish in your browser. GOAT carries on when you’re done.</p>' +
     '<div class="form-error" role="alert" hidden></div>' +
-    '<div class="welcome-foot"><button type="button" class="link" data-action="offline">Continue offline</button>' +
-    '<span class="spacer"></span><span class="welcome-note">Sign-in opens in your browser · Reown AppKit</span></div>' +
-    '</div>';
+    '<div class="card-foot"><button type="button" class="link" data-action="offline">Continue offline</button></div>';
 
   function openWelcome() {
     const p = ui.openPanel({
       name: 'welcome',
       html: WELCOME_HTML,
-      backdropCloses: false,
-      focus: '[data-action="create"]',
+      keyboard: false,
+      dock: 'right',
       onclick: async (event) => {
         const button = event.target.closest('[data-action]');
         if (!button || button.disabled) return;
         const action = button.dataset.action;
         showError(p, '');
+        if (action === 'dismiss') {
+          ui.closePanel();
+          return;
+        }
         if (action === 'offline') {
           button.disabled = true;
           const r = goat.signInOffline ? await goat.signInOffline() : { error: 'unavailable' };
@@ -69,20 +71,17 @@
 
   // ---------- account panel ----------
   const ACCOUNT_HTML =
-    '<div class="account">' +
-    '<div class="form-head"><strong>Your GOAT</strong><span class="form-sub acct-how"></span></div>' +
-    '<div class="acct-who"><span class="acct-label"></span><span class="acct-short"></span></div>' +
+    '<div class="card-head"><div class="acct-who"><div class="card-title acct-label"></div><div class="card-sub acct-how"></div></div>' +
+    '<button type="button" class="x" data-action="close" aria-label="Close">×</button></div>' +
     '<div class="acct-wallet"><div><div class="acct-balance">RM –</div><div class="acct-pro"></div></div>' +
-    '<span class="spacer"></span><button type="button" data-action="wallet">Top up or Pro…</button></div>' +
-    '<div class="acct-chats-head"><strong>Chats</strong><span class="spacer"></span>' +
-    '<button type="button" class="small" data-action="new">New chat</button></div>' +
+    '<span class="spacer"></span><button type="button" data-action="wallet">Top up</button></div>' +
+    '<div class="acct-chats-head"><span class="card-label">Chats</span><span class="spacer"></span>' +
+    '<button type="button" class="link" data-action="new">New chat</button></div>' +
     '<ol class="acct-chats"></ol>' +
     '<p class="acct-empty" hidden></p>' +
     '<div class="form-error" role="alert" hidden></div>' +
-    '<div class="form-actions"><button type="button" data-action="signout">Sign out</button>' +
-    '<button type="button" data-action="clear">Clear chats</button><span class="spacer"></span>' +
-    '<button type="button" class="primary" data-action="close">Close</button></div>' +
-    '</div>';
+    '<div class="card-foot"><button type="button" class="link" data-action="signout">Sign out</button>' +
+    '<span class="spacer"></span><button type="button" class="link quiet" data-action="clear">Clear chats</button></div>';
 
   function ago(ms) {
     const s = Math.max(0, (Date.now() - ms) / 1000);
@@ -96,15 +95,15 @@
   function renderWho(p) {
     const a = (info && info.account) || null;
     p.querySelector('.acct-label').textContent = a ? a.label : (info && info.userId) || 'This laptop';
-    p.querySelector('.acct-short').textContent = a && a.short && a.label.indexOf(a.short) < 0 ? a.short : '';
-    p.querySelector('.acct-how').textContent = a ? a.how : '';
+    const short = a && a.short && a.label.indexOf(a.short) < 0 ? ` · ${a.short}` : '';
+    p.querySelector('.acct-how').textContent = a ? `${a.how}${short}` : '';
   }
 
   function renderWallet(p, w) {
     if (!w || w.error) return;
     p.querySelector('.acct-balance').textContent = w.mode === 'off' ? 'Free' : rm(w.balanceMyr);
     const until = w.proUntil ? new Date(w.proUntil).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '';
-    p.querySelector('.acct-pro').textContent = w.pro ? `GOAT Pro until ${until}` : w.mode === 'off' ? '' : `${rm(w.priceMyr)} per assist`;
+    p.querySelector('.acct-pro').textContent = w.pro ? `Pro until ${until}` : w.mode === 'off' ? '' : `${rm(w.priceMyr)} per assist`;
   }
 
   function renderChats(p, chats) {
@@ -149,7 +148,8 @@
     const p = ui.openPanel({
       name: 'account',
       html: ACCOUNT_HTML,
-      focus: '[data-action="close"]',
+      keyboard: false,
+      dock: 'right',
       onclick: async (event) => {
         const target = event.target.closest('[data-action], [data-chat], [data-delete]');
         if (!target || target.disabled) return;

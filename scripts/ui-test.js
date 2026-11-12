@@ -228,14 +228,15 @@ await check('dwell: hovering within 28 px for 450 ms advances, and finishes the 
   await until(async () => near(await tip(), { x: STEPS[2].x + 14, y: STEPS[2].y - 20 + 16 }, 0.5), 'the cursor back beside the system cursor');
 });
 
-await check('LLM reply: answer bubble with "<model> · running on this laptop"', async () => {
+await check('LLM reply: a clean answer bubble, with no model or credit line', async () => {
   await setReply('ask', LLM_REPLY);
   await askVia('why do issues need a photo?');
   const b = await until(async () => {
     const x = await bubble();
     return x.visible && /evidence/.test(x.text) && x;
   }, 'the answer bubble');
-  assert.match(b.text, /gemma4:e4b-it-qat · running on this laptop/);
+  assert.doesNotMatch(b.text, /gemma|running on|x402/i);
+  assert.equal(await page.locator('#goat-bubble .meta').count(), 0);
   assert.match(b.className, /\banswer\b/);
   await shot('ui-04-llm');
 });
@@ -256,7 +257,7 @@ await check('the answer bubble follows the cursor, lets clicks through and hides
   await shot('ui-04b-llm-follows');
 });
 
-await check('a deep answer says it thought and searched, and lists its web sources', async () => {
+await check('an answer from the web lists its sources, and nothing else', async () => {
   await setReply('ask', {
     ...LLM_REPLY,
     say: 'Open the schedule, then File > Export > Reports > Schedule.',
@@ -267,10 +268,10 @@ await check('a deep answer says it thought and searched, and lists its web sourc
   await askVia('how do I export a schedule from revit?');
   const b = await until(async () => {
     const x = await bubble();
-    return x.visible && /searched the web/.test(x.text) && x;
-  }, 'the deep answer');
-  assert.match(b.text, /gemma4:e4b-it-qat · running on this laptop · thought it through · searched the web/);
+    return x.visible && /Sources:/.test(x.text) && x;
+  }, 'the answer with sources');
   assert.match(b.text, /Sources: help\.autodesk\.com, revitforum\.org/);
+  assert.doesNotMatch(b.text, /thought it through|searched the web|gemma/i);
   await shot('ui-04c-deep-answer');
 });
 
@@ -434,11 +435,10 @@ await check('highlight: a drag draws the rectangle, locks it, and the ask carrie
   }, 'goat.ask');
   assert.deepEqual(askCall.args, ['what is this?', { region: { x: 100, y: 500, width: 300, height: 200 }, chatId: null }]);
   assert.equal((await hlBox()).hidden, false, 'the rectangle stays while GOAT looks at it');
-  const b = await until(async () => {
+  await until(async () => {
     const x = await bubble();
     return x.visible && /pile cap/.test(x.text) && x;
   }, 'the answer');
-  assert.match(b.text, /read the highlighted area/);
   assert.equal((await hlBox()).hidden, true);
 });
 
@@ -555,7 +555,8 @@ await check('wallet: a ringgit chip in the ask panel; the wallet panel tops up a
   await page.click('.wallet-chip');
   await page.waitForSelector('.wallet-balance', { state: 'visible' });
   assert.equal(await page.locator('.wallet-balance').innerText(), 'RM 9.96');
-  assert.match(await page.locator('.wallet-sub').innerText(), /Each assist costs RM 0\.04 \(1¢\)/);
+  assert.equal(await page.locator('.wallet-sub').innerText(), 'RM 0.04 per assist');
+  assert.doesNotMatch(await page.locator('#goat-panel').innerText(), /x402|ledger|USDC/, 'no plumbing in the wallet');
   assert.doesNotMatch(await page.locator('#goat-panel').innerText(), /0x0000/, 'users never see an address');
   await setReply('topup', { ...WALLET, balanceMyr: 19.96, balanceUsd: 4.7524 });
   await page.click('[data-action="topup"]');
@@ -565,19 +566,19 @@ await check('wallet: a ringgit chip in the ask panel; the wallet panel tops up a
   await setReply('upgradePro', { tier: 'pro', pro: true, proUntil, payment: { success: true, transaction: `0x${'b'.repeat(64)}`, network: 'eip155:84532' } });
   await setReply('wallet', { ...WALLET, balanceMyr: 15.76, pro: true, proUntil });
   await page.click('[data-action="upgrade"]');
-  await until(() => page.evaluate(() => /You're on GOAT Pro until/.test(document.getElementById('goat-toasts').innerText)), 'the Pro toast');
+  await until(() => page.evaluate(() => /Pro until/.test(document.getElementById('goat-toasts').innerText)), 'the Pro toast');
   assert.equal(await page.locator('[data-action="upgrade"]').innerText(), 'Extend Pro');
-  assert.match(await page.locator('.wallet-pro').innerText(), /GOAT Pro until/);
+  assert.match(await page.locator('.wallet-pro').innerText(), /^Pro until .+: unlimited assists and voice\.$/);
   await shot('ui-13-wallet-panel');
   await page.click('[data-action="close"]');
   await setReply('wallet', WALLET);
 });
 
-await check('a paid answer flies a coin and says "1¢ paid via x402"', async () => {
+await check('a paid answer flies a coin and says "Paid 1¢"', async () => {
   await setReply('ask', { ...LLM_REPLY, payment: { success: true, transaction: `0x${'a'.repeat(64)}`, network: 'eip155:84532', payer: WALLET.address } });
   await askVia('why do issues need a photo?');
   await until(() => page.evaluate(() => document.querySelectorAll('.coin').length > 0), 'the coin');
-  await until(() => page.evaluate(() => /1¢ paid via x402/.test(document.getElementById('goat-toasts').innerText)), 'the payment toast');
+  await until(() => page.evaluate(() => /Paid 1¢/.test(document.getElementById('goat-toasts').innerText)), 'the payment toast');
   await shot('ui-14-paid');
   await setReply('ask', LLM_REPLY);
 });
@@ -754,7 +755,8 @@ await check('welcome: without an account GOAT asks you to sign in; the browser s
   await setReply('signIn', { ok: true, url: 'http://127.0.0.1:8402/account/?code=x&mode=create' });
   await emit({ type: 'open-welcome', signedIn: false, account: null, userId: 'ivanw' });
   await page.waitForSelector('.panel-welcome', { state: 'visible' });
-  assert.match(await page.locator('.panel-welcome').innerText(), /Welcome to GOAT[\s\S]*Create account[\s\S]*Connect wallet[\s\S]*Continue offline/);
+  assert.match(await page.locator('.panel-welcome').innerText(), /Sign in to GOAT[\s\S]*Create account[\s\S]*Connect wallet[\s\S]*Continue offline/);
+  assert.doesNotMatch(await page.locator('.panel-welcome').innerText(), /Reown|AppKit/, 'no credits');
   await shot('ui-17-welcome');
   await page.click('[data-action="create"]');
   await page.waitForSelector('.welcome-wait', { state: 'visible' });
@@ -845,6 +847,70 @@ await check('account: delete a chat, clear all (two clicks), and sign out', asyn
   await emit({ type: 'account', signedIn: false, account: null, userId: 'ivanw' });
   await page.waitForSelector('.panel-welcome', { state: 'visible' });
   await page.keyboard.press('Escape');
+});
+
+await check('panels move: drag one by an empty spot and it opens there next time', async () => {
+  await page.evaluate(() => localStorage.clear());
+  await emit({ type: 'open-ask', context: { app: 'Keynote', title: 'Deck.key' } });
+  await page.waitForSelector('#goat-ask-input', { state: 'visible' });
+  await sleep(250); // let the open animation finish
+  const before = await page.locator('#goat-panel').boundingBox();
+  // Dragging from the input does nothing: that's for typing.
+  const input = await page.locator('#goat-ask-input').boundingBox();
+  await page.mouse.move(input.x + 30, input.y + 10);
+  await page.mouse.down();
+  await page.mouse.move(input.x + 230, input.y + 130, { steps: 5 });
+  await page.mouse.up();
+  assert.deepEqual(await page.locator('#goat-panel').boundingBox(), before);
+  // The strip at the bottom of the panel is a handle.
+  const meta = await page.locator('.ask-meta').boundingBox();
+  await page.mouse.move(meta.x + meta.width / 2, meta.y + meta.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(meta.x + meta.width / 2 - 300, meta.y + meta.height / 2 + 160, { steps: 8 });
+  await page.mouse.up();
+  const after = await page.locator('#goat-panel').boundingBox();
+  assert.ok(Math.abs(after.x - (before.x - 300)) <= 1 && Math.abs(after.y - (before.y + 160)) <= 1, JSON.stringify({ before, after }));
+  await page.keyboard.press('Escape');
+  await emit({ type: 'open-ask', context: {} });
+  await page.waitForSelector('#goat-ask-input', { state: 'visible' });
+  await sleep(250);
+  const again = await page.locator('#goat-panel').boundingBox();
+  assert.ok(Math.abs(again.x - after.x) <= 1 && Math.abs(again.y - after.y) <= 1, 'it opens where it was left');
+  await shot('ui-20-moved');
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => localStorage.clear());
+});
+
+await check('account and sign-in are small cards at the top right that leave the screen usable', async () => {
+  await emit({ type: 'open-account', signedIn: true, account: ACCOUNT, userId: '0xabab' });
+  await page.waitForSelector('.panel-account', { state: 'visible' });
+  const box = await page.locator('#goat-panel').boundingBox();
+  assert.ok(box.x + box.width >= 1440 - 20 && box.y < 80 && box.width <= 340, JSON.stringify(box));
+  assert.equal(await page.locator('#goat-backdrop').isHidden(), true, 'no backdrop');
+  assert.equal((await ui()).panel.keyboard, false);
+  await emit({ type: 'cursor', x: 300, y: 500 }); // away from the card, clicks reach the apps
+  await until(async () => (await ui()).clickThrough === true, 'click-through away from the card');
+  await page.click('.panel-account [data-action="close"]');
+  assert.equal((await ui()).panel, null);
+});
+
+await check('while GOAT works, the readout beside the cursor shows each step', async () => {
+  await setReply('ask', LLM_REPLY, 6500);
+  await askVia('what does slide 3 say?');
+  await until(() => page.evaluate(() => !document.querySelector('.readout').offsetParent === false), 'the readout');
+  assert.deepEqual(await page.evaluate(() => window.GOATUI.steps()), ['Working on it']);
+  await emit({ type: 'progress', step: 'Reading the deck' });
+  await emit({ type: 'progress', step: 'Checking the guides' });
+  await emit({ type: 'progress', step: 'Reading the deck' }); // only new steps are added
+  await emit({ type: 'progress', step: 'Writing the answer' });
+  const lines = await page.evaluate(() => [...document.querySelectorAll('.readout li')].map((li) => [li.className, li.textContent]));
+  assert.deepEqual(lines, [['done', 'Checking the guides'], ['done', 'Reading the deck'], ['now', 'Writing the answer']]);
+  await shot('ui-21-readout');
+  // A step that runs long gets a short filler line.
+  await until(() => page.evaluate(() => window.GOATUI.steps().at(-1) === 'Still working on it'), 'the filler', 6000);
+  await until(async () => (await bubble()).visible && /evidence/.test((await bubble()).text), 'the answer', 4000);
+  assert.equal(await page.evaluate(() => document.querySelector('#goat-cursor').classList.contains('thinking')), false);
+  await setReply('ask', LLM_REPLY);
 });
 
 await check('no page errors or CSP violations', async () => {

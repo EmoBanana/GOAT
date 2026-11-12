@@ -72,7 +72,9 @@
   const onScreen = (p) => ({ x: clamp(p.x, 4, window.innerWidth - 4), y: clamp(p.y, 4, window.innerHeight - 4) });
 
   // ---------- blue cursor ----------
-  els.cursor.innerHTML = `${ART.cursorSvg()}<span class="pill">Thinking…</span>`;
+  // While GOAT works, a small readout beside the cursor shows what it's doing, step by step.
+  els.cursor.innerHTML = `${ART.cursorSvg()}<div class="readout" aria-live="polite"><ol></ol></div>`;
+  const readout = els.cursor.querySelector('.readout ol');
   let drawn = { x: NaN, y: NaN };
   function renderCursor() {
     if (drawn.x === state.pos.x && drawn.y === state.pos.y) return;
@@ -85,9 +87,46 @@
     renderCursor();
     els.cursor.classList.add('ready');
   }
-  function setThinking(on) {
+  // Steps come from main and the server ("Reading the deck", "Checking the guides"…). When one
+  // runs long, a short filler line says GOAT is still on it.
+  const STEPS_SHOWN = 3;
+  const FILLER_MS = 5000;
+  const FILLERS = ['Still working on it', 'Nearly there'];
+  let steps = [];
+  let fillerTimer = null;
+  function renderSteps() {
+    readout.replaceChildren(
+      ...steps.slice(-STEPS_SHOWN).map((text, i, shown) => {
+        const li = el('li', i === shown.length - 1 ? 'now' : 'done');
+        li.append(el('span', null, text));
+        return li;
+      }),
+    );
+  }
+  function armFiller(n = 0) {
+    clearTimeout(fillerTimer);
+    if (!state.thinking || n >= FILLERS.length) return;
+    fillerTimer = setTimeout(() => {
+      steps.push(FILLERS[n]);
+      renderSteps();
+      armFiller(n + 1);
+    }, FILLER_MS);
+  }
+  function addStep(text) {
+    const t = String(text || '').trim().slice(0, 80);
+    if (!state.thinking || !t || steps[steps.length - 1] === t) return;
+    steps = steps.filter((s) => !FILLERS.includes(s)).concat(t);
+    renderSteps();
+    armFiller();
+    emit('step', { text: t });
+  }
+  function setThinking(on, first = 'Working on it') {
     state.thinking = Boolean(on);
     els.cursor.classList.toggle('thinking', state.thinking);
+    clearTimeout(fillerTimer);
+    steps = state.thinking ? [first] : [];
+    renderSteps();
+    if (state.thinking) armFiller();
   }
 
   function onCursor(p) {
@@ -368,15 +407,18 @@
     focus();
     setTimeout(focus, 60); // Electron focuses the window late
   }
-  // opts: { name, html, keyboard, focus, onclick, onsubmit, oninput, backdropCloses, onEscape }
+  // opts: { name, html, keyboard, focus, onclick, onsubmit, oninput, backdropCloses, onEscape, dock }
+  // dock: 'right' puts a small card under the menu bar on the right; without the keyboard it has
+  // no backdrop, so the apps around it keep working.
   let panelEscape = null;
   function openPanel(opts = {}) {
     closePanel();
     const p = els.panel;
     const keyboard = opts.keyboard !== false;
     panelEscape = opts.onEscape || null;
-    p.className = `panel interactive${opts.name ? ` panel-${opts.name}` : ''}`;
+    p.className = `panel interactive${opts.name ? ` panel-${opts.name}` : ''}${opts.dock === 'right' ? ' dock-right' : ''}`;
     p.innerHTML = opts.html || '';
+    placeSaved(p, opts.name);
     p.onclick = opts.onclick || null;
     p.onsubmit = opts.onsubmit || null;
     p.oninput = opts.oninput || null;
@@ -399,6 +441,7 @@
     p.onclick = null;
     p.onsubmit = null;
     p.oninput = null;
+    Object.assign(p.style, { left: '', top: '', right: '', transform: '' });
     els.backdrop.hidden = true;
     els.backdrop.onclick = null;
     panelEscape = null;
@@ -406,6 +449,63 @@
     updateClickThrough();
     emit('panel:close', { name });
   }
+
+  // ---------- moving panels ----------
+  // Drag a panel by any empty part of it; each panel opens where you last left it.
+  const NO_DRAG = 'button, input, textarea, select, a, label, [contenteditable], .thread-turns, .acct-chats, .rec-steps, .ts-table, .draft-result';
+  const spotKey = (name) => `goat.panel.${name}`;
+  function movePanel(p, x, y) {
+    const w = p.offsetWidth || 320;
+    const left = clamp(Math.round(x), 80 - w, window.innerWidth - 80); // a corner always stays reachable
+    const top = clamp(Math.round(y), 32, window.innerHeight - 48); // never under the menu bar
+    Object.assign(p.style, { left: `${left}px`, top: `${top}px`, right: 'auto', transform: 'none' });
+    p.classList.add('moved');
+  }
+  function placeSaved(p, name) {
+    let spot = null;
+    try {
+      spot = JSON.parse(localStorage.getItem(spotKey(name)) || 'null');
+    } catch {
+      spot = null;
+    }
+    if (spot && Number.isFinite(spot.x) && Number.isFinite(spot.y)) movePanel(p, spot.x, spot.y);
+  }
+  let drag = null;
+  els.panel.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0 || !state.panel || event.target.closest(NO_DRAG)) return;
+    const r = els.panel.getBoundingClientRect();
+    drag = { id: event.pointerId, x0: event.clientX, y0: event.clientY, dx: event.clientX - r.left, dy: event.clientY - r.top, name: state.panel.name, moved: false };
+    els.panel.setPointerCapture(event.pointerId);
+    event.preventDefault(); // no text selection while dragging
+  });
+  els.panel.addEventListener('pointermove', (event) => {
+    if (!drag || event.pointerId !== drag.id) return;
+    if (!drag.moved) {
+      if (Math.hypot(event.clientX - drag.x0, event.clientY - drag.y0) < 3) return;
+      drag.moved = true;
+      state.dragging = true;
+      els.panel.classList.add('dragging');
+    }
+    movePanel(els.panel, event.clientX - drag.dx, event.clientY - drag.dy);
+  });
+  function endDrag(event) {
+    if (!drag || event.pointerId !== drag.id) return;
+    if (drag.moved) {
+      const r = els.panel.getBoundingClientRect();
+      try {
+        localStorage.setItem(spotKey(drag.name), JSON.stringify({ x: r.left, y: r.top }));
+      } catch {
+        // the panel still moved; it just won't be remembered
+      }
+      emit('panel:moved', { name: drag.name, x: r.left, y: r.top });
+    }
+    drag = null;
+    state.dragging = false;
+    els.panel.classList.remove('dragging');
+    updateClickThrough();
+  }
+  els.panel.addEventListener('pointerup', endDrag);
+  els.panel.addEventListener('pointercancel', endDrag);
 
   // ---------- ask ----------
   // Feature scripts add data to the next ask (e.g. the highlighted region).
@@ -461,7 +561,7 @@
     const turns = state.chat ? state.chat.turns.slice(-THREAD_TURNS) : [];
     box.hidden = !turns.length;
     if (!turns.length) return;
-    p.querySelector('.thread-title').textContent = state.chat.title || 'This chat';
+    p.querySelector('.thread-title').textContent = 'This chat';
     const list = p.querySelector('.thread-turns');
     list.replaceChildren(
       ...turns.map((t) => {
@@ -568,16 +668,8 @@
       playGuide(reply.guide);
       return;
     }
-    const meta = reply.model
-      ? [
-          reply.image && 'read the highlighted area',
-          `${reply.model} · ${reply.where || 'running on this laptop'}`,
-          reply.thought && 'thought it through',
-          reply.searched && reply.searched.length && 'searched the web',
-        ]
-          .filter(Boolean)
-          .join(' · ')
-      : '';
+    // The answer speaks for itself: the readout already showed what GOAT did, and web sources
+    // are the one footnote worth keeping.
     const hosts = (reply.sources || [])
       .filter((s) => s.type === 'web')
       .map((s) => {
@@ -593,7 +685,6 @@
       kind: 'answer',
       intro: spoken && state.heard ? `You said “${state.heard}”` : '',
       text: reply.say || '…',
-      meta,
       sources: hosts.length ? `Sources: ${hosts.join(', ')}` : '',
       follow: true,
       reveal: spoken,
@@ -638,7 +729,7 @@
   // ---------- click-through ----------
   // Take the mouse only over visible controls, or while a panel needs the keyboard.
   function updateClickThrough() {
-    let capture = Boolean(state.panel && state.panel.keyboard);
+    let capture = Boolean(state.panel && state.panel.keyboard) || Boolean(state.dragging);
     if (!capture && state.sys) {
       const hit = document.elementFromPoint(state.sys.x, state.sys.y);
       capture = Boolean(hit && hit.closest('.interactive'));
@@ -688,6 +779,8 @@
     showRing,
     hideRing,
     setThinking,
+    addStep,
+    steps: () => steps.slice(),
     toLocal,
     updateClickThrough,
     // Voice turn on/off; heard is the transcript shown above the spoken answer.
@@ -729,6 +822,8 @@
       if (message.type === 'cursor') onCursor(message);
       else if (message.type === 'origin') state.origin = { x: Number(message.x) || 0, y: Number(message.y) || 0 };
       else if (message.type === 'open-ask') openAsk(message);
+      else if (message.type === 'progress') addStep(message.step);
+      else if (message.type === 'notice' && message.text) toast(String(message.text), { ms: 9000 });
       emit(message.type, message);
     });
   }

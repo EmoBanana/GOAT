@@ -1,5 +1,5 @@
-// The wallet abstraction in the UI: a ringgit chip in the ask panel, a wallet panel with Top up and
-// Upgrade to Pro, and a coin flying off the cursor with "1¢ paid via x402" after each paid ask.
+// The wallet abstraction in the UI: a ringgit chip in the ask panel, a wallet card with Top up and
+// Upgrade to Pro, and a coin flying off the cursor after each paid ask (x402 underneath).
 // Users never see an address.
 (function () {
   'use strict';
@@ -74,18 +74,17 @@
     coinFly();
     await refresh();
     const onChain = wallet && wallet.explorer && wallet.mode === 'x402' && /^0x[0-9a-f]{64}$/i.test(receipt.transaction || '');
-    ui.toast(`${cents()}¢ paid via x402`, { ms: 4500, link: onChain ? `${wallet.explorer}${receipt.transaction}` : null });
+    ui.toast(`Paid ${cents()}¢`, { ms: 3500, link: onChain ? `${wallet.explorer}${receipt.transaction}` : null });
   }
 
   const HTML =
-    '<div class="wallet">' +
-    '<div class="form-head"><strong>GOAT wallet</strong><span class="form-sub wallet-mode"></span></div>' +
+    '<div class="card-head"><div class="card-title">Wallet</div>' +
+    '<button type="button" class="x" data-action="close" aria-label="Close">×</button></div>' +
     '<div class="wallet-balance"></div><div class="wallet-sub"></div>' +
     '<div class="wallet-pro"></div>' +
     '<div class="form-error" role="alert" hidden></div>' +
-    '<div class="form-actions"><button type="button" data-action="close">Close</button><span class="spacer"></span>' +
-    '<button type="button" data-action="topup">Top up RM 10</button><button type="button" class="primary" data-action="upgrade">Upgrade to Pro</button></div>' +
-    '</div>';
+    '<div class="form-actions"><button type="button" data-action="topup">Top up RM 10</button><span class="spacer"></span>' +
+    '<button type="button" class="primary" data-action="upgrade">Upgrade to Pro</button></div>';
 
   function showError(p, text) {
     const box = p.querySelector('.form-error');
@@ -95,15 +94,12 @@
 
   function render(p) {
     const w = wallet || {};
-    const modes = { 'x402-local': 'x402 · local ledger', x402: 'x402 · Base Sepolia', off: 'payments off' };
-    p.querySelector('.wallet-mode').textContent = modes[w.mode] || '';
     p.querySelector('.wallet-balance').textContent = w.mode === 'off' ? 'Free' : rm(w.balanceMyr);
-    p.querySelector('.wallet-sub').textContent =
-      w.mode === 'off' ? 'Payments are switched off on this server.' : `About $${(w.balanceUsd || 0).toFixed(2)} in USDC. Each assist costs ${rm(w.priceMyr)} (${cents()}¢).`;
+    p.querySelector('.wallet-sub').textContent = w.mode === 'off' ? 'Assists are free on this server.' : `${rm(w.priceMyr)} per assist`;
     const until = w.proUntil ? new Date(w.proUntil).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '';
     p.querySelector('.wallet-pro').textContent = w.pro
-      ? `GOAT Pro until ${until}: no per-assist charge, the better model and voice mode.`
-      : `GOAT Pro: no per-assist charge, the better model and voice mode, ${rm(w.proPriceMyr)} for ${w.proDays || 30} days, paid with x402.`;
+      ? `Pro until ${until}: unlimited assists and voice.`
+      : `Pro: unlimited assists and voice, ${rm(w.proPriceMyr)} for ${w.proDays || 30} days.`;
     p.querySelector('[data-action="upgrade"]').textContent = w.pro ? 'Extend Pro' : 'Upgrade to Pro';
     p.querySelector('[data-action="topup"]').disabled = w.mode === 'off';
   }
@@ -112,6 +108,8 @@
     const p = ui.openPanel({
       name: 'wallet',
       html: HTML,
+      keyboard: false,
+      dock: 'right',
       onclick: async (event) => {
         const button = event.target.closest('[data-action]');
         if (!button) return;
@@ -126,7 +124,7 @@
           const r = goat.topup ? await goat.topup(10) : { error: 'unavailable', message: 'Top-ups are not available.' };
           if (r && !r.error) {
             wallet = r;
-            ui.toast('Topped up RM 10. Pay in ringgit, settle on-chain.');
+            ui.toast('Topped up RM 10');
           } else {
             showError(p, (r && r.message) || 'The top-up failed.');
           }
@@ -137,7 +135,7 @@
             await refresh();
             if (r.payment && r.payment.success) coinFly();
             const until = new Date(r.proUntil).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
-            ui.toast(`You're on GOAT Pro until ${until}.`, { ms: 5000 });
+            ui.toast(`Pro until ${until}`, { ms: 4000 });
             ui.emit('pro', { pro: true, proUntil: r.proUntil });
           } else {
             showError(p, (r && r.message) || 'The upgrade failed.');

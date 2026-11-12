@@ -100,7 +100,7 @@
   // GOAT-compatible: paste vendor docs, Gemma drafts the steps, then "Record positions".
   const DRAFT_HTML =
     '<div class="draft">' +
-    '<div class="form-head"><strong>Draft a guide from docs</strong><span class="form-sub">GOAT-compatible</span></div>' +
+    '<div class="form-head"><strong>Draft a guide from docs</strong></div>' +
     '<textarea class="draft-text" spellcheck="false" placeholder="Paste the vendor\'s instructions for one procedure."></textarea>' +
     '<div class="draft-result" hidden></div>' +
     '<div class="form-error" role="alert" hidden></div>' +
