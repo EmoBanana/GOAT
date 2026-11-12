@@ -6,7 +6,7 @@
 //                         https://<store>.public.blob.vercel-storage.com/goat/
 // With neither, the download buttons point at the GOAT server's /download route, which only works
 // when a GOAT server serves the page. Rebuild the site after publishing: npm run build.
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -69,18 +69,16 @@ function upload(build) {
   }
   console.log(`[publish] Uploading ${build.file} (${Math.round(build.bytes / 1e6)} MB) to Vercel Blob…`);
   const zip = path.join(root, 'dist', build.file);
-  let output;
-  try {
-    output = execFileSync(cli[0], [...cli.slice(1), 'blob', 'put', zip, '--access', 'public', '--pathname', `goat/${build.file}`, '--force', '--rw-token', token], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-      maxBuffer: 1 << 24,
-    });
-  } catch (err) {
+  // The CLI writes its result ("Success! <url>") and its errors to stderr.
+  const run = spawnSync(cli[0], [...cli.slice(1), 'blob', 'put', zip, '--access', 'public', '--pathname', `goat/${build.file}`, '--force', '--rw-token', token], {
+    encoding: 'utf8',
+    maxBuffer: 1 << 24,
+  });
+  const output = `${run.stdout || ''}${run.stderr || ''}`.split(token).join('<token>');
+  if (run.status !== 0) {
     // Show the CLI's own reason (the token masked), not just "Command failed".
-    const said = `${err.stdout || ''}${err.stderr || ''}`.split(token).join('<token>');
-    const reason = said.split('\n').find((line) => /error/i.test(line) && !/DeprecationWarning|trace-warnings/.test(line)) || said.trim();
-    const hint = /private store/i.test(said)
+    const reason = output.split('\n').find((line) => /error/i.test(line) && !/DeprecationWarning|trace-warnings/.test(line)) || output.trim() || run.error?.message;
+    const hint = /private store/i.test(output)
       ? '\nThe downloads need a public Blob store (a store’s access can’t change after it’s made). In Vercel, create a Blob store with Public access and put its token in web/.env.local.'
       : '';
     fail(`Uploading ${build.file} failed: ${reason}${hint}`);
