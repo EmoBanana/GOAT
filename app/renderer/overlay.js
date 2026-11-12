@@ -660,19 +660,108 @@
   if ('speechSynthesis' in window) window.speechSynthesis.addEventListener?.('voiceschanged', () => (bestVoice = pickVoice()));
 
   // The Mac's own voice: it starts at once, and it's what GOAT falls back to.
+  // ---------- the words of a spoken answer ----------
+  // Words as the server splits them (on whitespace): where each starts in the text, and roughly
+  // when it's said, as a share of the whole (its letters, plus a pause after a comma or a full stop).
+  function wordOffsets(text) {
+    const at = [];
+    String(text).replace(/\S+/g, (w, i) => {
+      at.push(i);
+      return w;
+    });
+    return at;
+  }
+  function wordStarts(text) {
+    const weights = (String(text).match(/\S+/g) || []).map((w) => w.replace(/[^\p{L}\p{N}]/gu, '').length + 2 + (/[.!?]$/.test(w) ? 5 : /[,;:]$/.test(w) ? 3 : 0));
+    const total = weights.reduce((a, b) => a + b, 0) || 1;
+    let sum = 0;
+    return weights.map((x) => {
+      const start = sum / total;
+      sum += x;
+      return start;
+    });
+  }
+  // The last word that has started by `at` (same units as `starts`).
+  function indexAt(starts, at) {
+    let i = 0;
+    while (i + 1 < starts.length && starts[i + 1] <= at) i += 1;
+    return i;
+  }
+  // Puts the text in as one span per word (spaces kept), for markWords to mark.
+  function layWords(container, text) {
+    container.replaceChildren();
+    const words = [];
+    for (const part of String(text).split(/(\s+)/)) {
+      if (!part) continue;
+      if (/^\s+$/.test(part)) {
+        container.append(part);
+        continue;
+      }
+      const w = el('span', 'w', part);
+      container.append(w);
+      words.push(w);
+    }
+    return words;
+  }
+  // Words before `i` are said, word `i` is being said; `i` = words.length: all said.
+  function markWords(words, i) {
+    words.forEach((w, k) => {
+      w.classList.toggle('said', k < i);
+      w.classList.toggle('now', k === i);
+    });
+  }
+
   function speakWithMac(text, opts) {
     if (!('speechSynthesis' in window)) return false;
     const u = new SpeechSynthesisUtterance(text);
     bestVoice = bestVoice || pickVoice();
     if (bestVoice) u.voice = bestVoice;
     u.rate = 1.05;
-    u.onstart = () => emit('speak:start', { text, voice: 'system' });
-    u.onend = () => emit('speak:end', { text });
-    u.onerror = () => emit('speak:end', { text });
+    // The word being said: from the voice's own word events, else estimated (about 15 characters
+    // a second) from when it started.
+    const offsets = wordOffsets(text);
+    const starts = wordStarts(text);
+    const guessMs = Math.max(1200, ((text.length / 15) * 1000) / u.rate);
+    let began = performance.now();
+    let byEvents = false;
+    let over = false;
+    const finish = () => {
+      if (over) return;
+      over = true;
+      if (opts.onWord) opts.onWord(offsets.length);
+    };
+    u.onstart = () => {
+      began = performance.now();
+      emit('speak:start', { text, voice: 'system' });
+    };
+    u.onboundary = (e) => {
+      if (over || (e.name && e.name !== 'word')) return;
+      byEvents = true;
+      if (opts.onWord) opts.onWord(indexAt(offsets, e.charIndex));
+    };
+    u.onend = () => {
+      finish();
+      emit('speak:end', { text });
+    };
+    u.onerror = u.onend;
     try {
       window.speechSynthesis.speak(u);
     } catch {
       return false; // no voice to speak with
+    }
+    if (opts.onWord) {
+      let last = -1;
+      const tick = () => {
+        if (over) return;
+        if (!byEvents) {
+          const f = (performance.now() - began) / guessMs;
+          if (f >= 1) return finish();
+          const i = indexAt(starts, f);
+          if (i !== last) opts.onWord((last = i));
+        }
+        requestAnimationFrame(tick);
+      };
+      tick();
     }
     return true;
   }
@@ -694,14 +783,22 @@
   // Speaks while voice mode is on (opts.force: always, e.g. guide steps of a spoken question):
   // in GOAT's voice when the server has one, else, or if that fails, in the Mac's.
   // opts.onSilent() runs when neither could say it, so the words can be shown instead.
+  // opts.onWord(i) says which word is being said (as the text splits on whitespace), and the
+  // number of words once it's all said.
+  // { buffer, marks }: the audio, and when each word starts (seconds) if the server knows.
   function fetchVoice(text) {
     return Promise.resolve()
       .then(() => goat.speak(text))
-      .then((reply) => (reply && typeof reply.audio === 'string' && reply.audio ? decodeClip(reply.audio) : null))
+      .then(async (reply) => {
+        if (!reply || typeof reply.audio !== 'string' || !reply.audio) return null;
+        const buffer = await decodeClip(reply.audio);
+        const marks = Array.isArray(reply.marks) && reply.marks.every(Number.isFinite) ? reply.marks : null;
+        return buffer ? { buffer, marks } : null;
+      })
       .catch(() => null);
   }
   // An answer that waits (for a clip to end) gets its voice fetched meanwhile, so it starts at once.
-  let prepared = null; // { text, clip: Promise<AudioBuffer | null> }
+  let prepared = null; // { text, clip: Promise<{ buffer, marks } | null> }
   function prepareSpeech(text) {
     if (goat.speak && text) prepared = { text, clip: fetchVoice(text) };
   }
@@ -713,26 +810,42 @@
     emit('speak:wait', { text });
     const voice = prepared && prepared.text === text ? prepared.clip : fetchVoice(text);
     prepared = null;
-    voice.then((clip) => {
+    voice.then((got) => {
       if (speech !== mine) return; // stopped meanwhile, or something newer is being said
-      if (!clip) {
+      if (!got) {
         speech = null;
         emit('speak:end', { text }); // the wait is over; the Mac's voice starts its own turn
         if (!speakWithMac(text, opts) && opts.onSilent) opts.onSilent();
         return;
       }
+      const { buffer, marks } = got;
+      const count = wordOffsets(text).length;
       const node = audioCtx.createBufferSource();
-      node.buffer = clip;
+      node.buffer = buffer;
       node.connect(audioCtx.destination);
       node.onended = () => {
         if (speech !== mine) return;
         speech = null;
+        if (opts.onWord) opts.onWord(count);
         emit('speak:end', { text });
       };
       mine.node = node;
       node.start();
-      const ms = Math.round(clip.duration * 1000);
-      emit('speak:start', { text, voice: 'elevenlabs', ms });
+      const began = audioCtx.currentTime;
+      emit('speak:start', { text, voice: 'elevenlabs', ms: Math.round(buffer.duration * 1000) });
+      if (opts.onWord) {
+        // The word being said: from the server's timings, else estimated over the clip's length.
+        const starts = marks && marks.length === count ? null : wordStarts(text);
+        let last = -1;
+        const tick = () => {
+          if (speech !== mine) return;
+          const t = audioCtx.currentTime - began;
+          const i = starts ? indexAt(starts, t / buffer.duration) : indexAt(marks, t);
+          if (i !== last) opts.onWord((last = i));
+          requestAnimationFrame(tick);
+        };
+        tick();
+      }
     });
     return true;
   }
@@ -757,15 +870,92 @@
   }
 
   // ---------- clip before a spoken answer ----------
-  // "What's MCP?" asked aloud: a short video plays in the middle of a cloudy screen while GOAT
-  // works out the answer, and the answer is spoken once it ends. A click skips to the answer;
-  // talking over it or Esc cancels both; a clip that can't play is skipped at once.
+  // "What's MCP?" asked aloud: the screen fogs over, banks of clouds roll in on both sides and a
+  // short video plays in the middle while GOAT works out the answer; the answer is spoken once it
+  // ends. A click skips to the answer; talking over it or Esc cancels both; a clip that can't play
+  // is skipped.
   let shownClip = null; // { finish(how) }
+
+  // Cumulus clouds drawn in SVG: soft white puffs (a seeded layout, so each cloud has its own
+  // shape) over blue-grey shading, their edges billowed by low-frequency noise. Units: the
+  // cloud's size is 100; filters and gradients are shared.
+  const CLOUD_DEFS = `<svg class="clip-defs" aria-hidden="true"><defs>
+    <radialGradient id="goat-puff" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#fff"/><stop offset="74%" stop-color="#fff"/><stop offset="100%" stop-color="#fff" stop-opacity="0"/></radialGradient>
+    <radialGradient id="goat-far" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#e6ecf4"/><stop offset="70%" stop-color="#d9e1ec"/><stop offset="100%" stop-color="#d2dbe7" stop-opacity="0"/></radialGradient>
+    <linearGradient id="goat-body" gradientUnits="userSpaceOnUse" x1="0" y1="-95" x2="0" y2="95"><stop offset="0%" stop-color="#fff"/><stop offset="45%" stop-color="#fff"/><stop offset="100%" stop-color="#9fadc2"/></linearGradient>
+    <radialGradient id="goat-shade" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#9eacc0" stop-opacity="0.7"/><stop offset="55%" stop-color="#b1bdcd" stop-opacity="0.45"/><stop offset="100%" stop-color="#c6cfdb" stop-opacity="0"/></radialGradient>
+    ${[5, 17, 29]
+      .map(
+        (seed, k) => `<filter id="goat-billow-${k}" x="-20%" y="-20%" width="140%" height="140%"><feTurbulence type="fractalNoise" baseFrequency="0.012" numOctaves="4" seed="${seed}" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="37" xChannelSelector="R" yChannelSelector="G"/><feGaussianBlur stdDeviation="0.8"/></filter>
+    <filter id="goat-haze-${k}" x="-20%" y="-20%" width="140%" height="140%"><feTurbulence type="fractalNoise" baseFrequency="0.01" numOctaves="3" seed="${seed + 3}" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="42" xChannelSelector="R" yChannelSelector="G"/><feGaussianBlur stdDeviation="3.5"/></filter>
+    <filter id="goat-shade-${k}" x="-20%" y="-20%" width="140%" height="140%"><feTurbulence type="fractalNoise" baseFrequency="0.015" numOctaves="4" seed="${seed + 8}" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="30" xChannelSelector="R" yChannelSelector="G"/><feGaussianBlur stdDeviation="5"/></filter>`,
+      )
+      .join('')}
+  </defs></svg>`;
+  function seeded(seed) {
+    let t = seed >>> 0;
+    return () => {
+      t += 0x6d2b79f5;
+      let r = Math.imul(t ^ (t >>> 15), 1 | t);
+      r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+      return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function cloudSvg(seed, k, far) {
+    const rand = seeded(seed);
+    const puffs = [];
+    // rows of puffs: a wide base, a fuller middle, a couple on top
+    for (const [dy, n, spread, rmin, rmax] of [[32, 5, 115, 42, 58], [-5, 4, 85, 50, 72], [-42, 2, 45, 42, 60]]) {
+      for (let i = 0; i < n; i += 1) {
+        const t = i / (n - 1) - 0.5;
+        puffs.push([t * 2 * spread + (rand() - 0.5) * 25, dy + (rand() - 0.5) * 14, rmin + rand() * (rmax - rmin)]);
+      }
+    }
+    const circle = (x, y, r, fill) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r.toFixed(1)}" fill="url(#${fill})"/>`;
+    const box = '<svg viewBox="-250 -160 500 340" aria-hidden="true">';
+    if (far) return `${box}<g filter="url(#goat-haze-${k})" opacity="0.92">${puffs.map(([x, y, r]) => circle(x, y, r, 'goat-far')).join('')}</g></svg>`;
+    const shade = puffs.filter(([, y]) => y > -10).map(([x, y, r]) => circle(x, y + 30, r * 0.95, 'goat-shade')).join('');
+    const white = puffs.map(([x, y, r]) => circle(x, y, r, 'goat-puff')).join('');
+    // the same mass again, bright at the top and greyer towards the base, laid over it as one
+    // layer (the group's opacity), so overlapping puffs don't darken where they meet
+    const body = puffs.map(([x, y, r]) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${(r * 0.86).toFixed(1)}" fill="url(#goat-body)"/>`).join('');
+    return `${box}<g filter="url(#goat-shade-${k})" opacity="0.85">${shade}</g><g filter="url(#goat-billow-${k})">${white}</g><g filter="url(#goat-haze-${k})" opacity="0.42">${body}</g></svg>`;
+  }
+  // [side, x vw, y vh, size vw, seed, far]: on each side a far row (bigger, paler, softer) and a
+  // near row of white clouds in front, overlapping it, the bank's inner edge behind the video.
+  const CLOUDS = [
+    ['left', 1, 12, 13, 101, true],
+    ['left', -2, 55, 14, 103, true],
+    ['left', 2, 94, 13, 107, true],
+    ['right', 99, 10, 13, 109, true],
+    ['right', 102, 52, 14, 113, true],
+    ['right', 98, 92, 13, 127, true],
+    ['left', 9, 5, 9.5, 11],
+    ['left', 4, 34, 10.5, 23],
+    ['left', 10, 66, 10, 37],
+    ['left', 5, 97, 10.5, 47],
+    ['right', 91, 6, 10, 41],
+    ['right', 96, 36, 10.5, 53],
+    ['right', 90, 67, 10, 67],
+    ['right', 95, 97, 10.5, 79],
+  ];
+
   function playClip(url) {
     stopClip('cancelled');
     return new Promise((resolve) => {
       const layer = el('div', 'clip interactive');
-      for (const puff of ['a', 'b', 'c', 'd']) layer.append(el('div', `clip-cloud ${puff}`));
+      layer.append(el('div', 'clip-fog'));
+      layer.insertAdjacentHTML('beforeend', CLOUD_DEFS);
+      CLOUDS.forEach(([side, x, y, size, seed, far], k) => {
+        const c = el('div', `clip-cloud ${side}${far ? ' far' : ''}`);
+        c.style.width = `${size * 5}vw`;
+        c.style.left = `${x - size * 2.5}vw`;
+        c.style.top = `calc(${y}vh - ${size * 1.6}vw)`;
+        c.style.animationDelay = `${(k % 5) * 70}ms`;
+        c.innerHTML = cloudSvg(seed, k % 3, far);
+        c.firstChild.style.animationDuration = `${15 + ((k * 7) % 9)}s`;
+        layer.append(c);
+      });
       const frame = el('div', 'clip-frame');
       const video = document.createElement('video');
       video.src = url;
@@ -840,15 +1030,32 @@
         }
       })
       .filter(Boolean);
-    const inWords = () => showBubble({ kind: 'answer', text: reply.say || '…', sources: hosts.length ? `Sources: ${hosts.join(', ')}` : '', follow: true });
-    // A typed question is answered in a bubble. A spoken one is answered aloud, with no bubble:
-    // the words only show when nothing can say them, so the answer is never lost.
+    const say = reply.say || '…';
+    const inWords = (ms) => showBubble({ kind: 'answer', text: say, sources: hosts.length ? `Sources: ${hosts.join(', ')}` : '', follow: true, ms });
     if (!state.voice) {
       inWords();
       return;
     }
-    hideBubble();
-    if (!speak(reply.say, { onSilent: inWords })) inWords();
+    // Spoken: the answer shows as it's said, with the word being said marked. It stays up while
+    // GOAT talks and a few seconds after; if nothing can speak, it stays for a reading time.
+    const b = inWords(0);
+    const shown = state.bubble;
+    const words = layWords(b.querySelector('.text'), say);
+    const settle = (ms) => {
+      if (state.bubble !== shown) return;
+      markWords(words, words.length);
+      clearTimeout(bubbleTimer);
+      bubbleTimer = setTimeout(hideBubble, ms);
+    };
+    const said = speak(reply.say, {
+      onWord: (i) => {
+        if (state.bubble !== shown) return;
+        if (i >= words.length) settle(5000);
+        else markWords(words, i);
+      },
+      onSilent: () => settle(readingMs(say)),
+    });
+    if (!said) settle(readingMs(say));
   }
 
   async function ask(question, extra) {

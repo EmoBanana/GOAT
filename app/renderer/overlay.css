@@ -90,6 +90,10 @@ body {
 }
 .bubble .intro { margin-bottom: 4px; color: var(--muted); font-size: 12px; }
 .bubble .text { font-weight: 450; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* A spoken answer: every word shows; those still to come are lighter, and the one being said is marked. */
+.bubble .text .w { color: var(--muted); border-radius: 4px; transition: color 120ms ease, background-color 120ms ease, box-shadow 120ms ease; }
+.bubble .text .w.said { color: inherit; }
+.bubble .text .w.now { color: var(--blue-dark); background: var(--blue-soft); box-shadow: 0 0 0 2px var(--blue-soft); }
 .bubble .meta { margin-top: 6px; color: var(--muted); font-size: 11px; }
 .bubble .sources { margin-top: 6px; color: var(--muted); font: 500 10.5px/1.4 var(--mono); overflow-wrap: anywhere; }
 .bubble .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; }
@@ -328,7 +332,6 @@ body {
 }
 .cursor[data-voice="listening"] .voice-hud,
 .cursor[data-voice="working"] .voice-hud,
-.cursor[data-voice="speaking"] .voice-hud { display: flex; }
 .voice-hud .bar { display: block; width: 3px; height: 16px; border-radius: 2px; background: var(--blue); transform: scaleY(0.2); transition: transform 60ms linear; }
 .voice-hud .dots { display: none; align-items: center; gap: 4px; padding: 0 2px; }
 .voice-hud .dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--blue); animation: goat-dot 1s ease-in-out infinite; }
@@ -337,10 +340,6 @@ body {
 @keyframes goat-dot { 0%, 80%, 100% { opacity: 0.25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
 .cursor[data-voice="working"] .voice-hud .bar { display: none; }
 .cursor[data-voice="working"] .voice-hud .dots { display: flex; }
-.cursor[data-voice="speaking"] .voice-hud .bar { transition: none; animation: goat-sway 0.9s ease-in-out infinite; }
-.cursor[data-voice="speaking"] .voice-hud .bar:nth-child(2n) { animation-delay: 0.2s; }
-.cursor[data-voice="speaking"] .voice-hud .bar:nth-child(3n) { animation-delay: 0.45s; }
-@keyframes goat-sway { 0%, 100% { transform: scaleY(0.25); } 50% { transform: scaleY(0.8); } }
 .cursor[data-voice="listening"] svg { filter: drop-shadow(0 0 6px rgba(37, 99, 235, 0.65)) drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.45)); }
 /* Spoken answers fade in word by word. */
 
@@ -615,52 +614,50 @@ body {
 .panel.dock-right .wallet-tx-meta { color: var(--nb-soft); }
 .panel.dock-right .wallet-tx-open { color: var(--nb-ink); }
 
-/* A clip before a spoken answer ("What's MCP?"): the screen goes cloudy, the video plays in the
-   middle, and the answer is spoken once it ends. Above everything; a click skips it. */
-.clip {
-  position: fixed;
-  inset: 0;
-  z-index: 90;
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-  cursor: pointer;
-  background:
-    radial-gradient(60% 50% at 18% 22%, rgba(255, 255, 255, 0.96), transparent 70%),
-    radial-gradient(55% 45% at 82% 28%, rgba(241, 246, 255, 0.94), transparent 70%),
-    radial-gradient(60% 50% at 28% 82%, rgba(246, 249, 255, 0.94), transparent 70%),
-    radial-gradient(55% 50% at 80% 80%, rgba(255, 255, 255, 0.96), transparent 70%),
-    rgba(229, 237, 249, 0.82);
-  animation: clip-in 420ms ease-out both;
-}
-.clip.out { animation: clip-out 380ms ease-in both; }
-.clip-cloud {
+/* A clip before a spoken answer ("What's MCP?"): the screen fogs over, banks of cumulus clouds roll
+   in on both sides, the video plays in the middle, and the answer is spoken once it ends. Above
+   everything; a click skips it. */
+.clip { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; overflow: hidden; cursor: pointer; }
+.clip-fog {
   position: absolute;
-  border-radius: 50%;
-  background: #fff;
-  filter: blur(48px);
-  opacity: 0.85;
-  animation: clip-drift 18s ease-in-out infinite alternate;
+  inset: 0;
+  /* hazy and light around the video, a soft overcast grey-blue towards the sides, so the clouds read */
+  background:
+    radial-gradient(ellipse 46% 58% at 50% 50%, rgba(246, 249, 253, 0.92), rgba(232, 238, 246, 0.86) 45%, rgba(196, 209, 227, 0) 100%),
+    radial-gradient(40% 30% at 50% 6%, rgba(255, 255, 255, 0.5), transparent 70%),
+    radial-gradient(40% 30% at 50% 94%, rgba(255, 255, 255, 0.45), transparent 70%),
+    linear-gradient(90deg, rgba(170, 186, 208, 0.94), rgba(198, 210, 228, 0.9) 22%, rgba(218, 227, 239, 0.88) 50%, rgba(198, 210, 228, 0.9) 78%, rgba(170, 186, 208, 0.94));
+  animation: clip-in 500ms ease-out both;
 }
-.clip-cloud.a { width: 46vw; height: 30vw; left: -8vw; top: -6vw; }
-.clip-cloud.b { width: 40vw; height: 26vw; right: -10vw; top: 6vh; animation-duration: 22s; }
-.clip-cloud.c { width: 50vw; height: 28vw; left: 8vw; bottom: -12vw; animation-duration: 26s; }
-.clip-cloud.d { width: 36vw; height: 24vw; right: 2vw; bottom: -8vw; animation-duration: 20s; }
+.clip-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
+.clip-cloud { position: absolute; aspect-ratio: 500 / 340; will-change: transform; animation: clip-cloud-in 950ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.clip-cloud.right { animation-name: clip-cloud-in-right; }
+.clip-cloud svg { display: block; width: 100%; height: 100%; overflow: visible; will-change: transform; animation: clip-drift 17s ease-in-out infinite alternate; }
+.clip-cloud.right svg { animation-direction: alternate-reverse; }
+.clip.out .clip-fog { animation: clip-out 420ms ease-in both; }
+.clip.out .clip-cloud { animation: clip-cloud-out 420ms ease-in both; }
+.clip.out .clip-cloud.right { animation-name: clip-cloud-out-right; }
+.clip.out .clip-frame { animation: clip-out 300ms ease-in both; }
 .clip-frame {
   position: relative;
-  width: min(64vw, calc(70vh * 16 / 9), 1100px);
+  z-index: 1; /* the clouds' inner edges tuck behind it */
+  width: min(58vw, calc(66vh * 16 / 9), 1100px);
   aspect-ratio: 16 / 9;
   border-radius: 18px;
   overflow: hidden;
   background: #000;
-  box-shadow: 0 30px 80px rgba(30, 50, 90, 0.28), 0 0 0 1px rgba(255, 255, 255, 0.75);
-  animation: clip-rise 520ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  box-shadow: 0 30px 80px rgba(20, 40, 80, 0.32), 0 0 0 1px rgba(255, 255, 255, 0.7);
+  animation: clip-rise 560ms 120ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 .clip-frame video { display: block; width: 100%; height: 100%; object-fit: cover; }
 @keyframes clip-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes clip-out { from { opacity: 1; } to { opacity: 0; } }
 @keyframes clip-rise { from { opacity: 0; transform: translateY(14px) scale(0.97); } to { opacity: 1; transform: none; } }
-@keyframes clip-drift { from { transform: translate3d(0, 0, 0) scale(1); } to { transform: translate3d(3vw, 1.5vw, 0) scale(1.08); } }
+@keyframes clip-cloud-in { from { opacity: 0; transform: translate3d(-32vw, 0, 0); } to { opacity: 1; transform: none; } }
+@keyframes clip-cloud-in-right { from { opacity: 0; transform: translate3d(32vw, 0, 0); } to { opacity: 1; transform: none; } }
+@keyframes clip-cloud-out { to { opacity: 0; transform: translate3d(-32vw, 0, 0); } }
+@keyframes clip-cloud-out-right { to { opacity: 0; transform: translate3d(32vw, 0, 0); } }
+@keyframes clip-drift { from { transform: translate3d(-0.8vw, 0.3vh, 0); } to { transform: translate3d(0.9vw, -0.4vh, 0); } }
 @media (prefers-reduced-motion: reduce) {
-  .clip, .clip.out, .clip-frame, .clip-cloud { animation: none; }
+  .clip-fog, .clip-cloud, .clip-cloud svg, .clip-frame, .clip.out .clip-fog, .clip.out .clip-cloud, .clip.out .clip-frame { animation: none; }
 }

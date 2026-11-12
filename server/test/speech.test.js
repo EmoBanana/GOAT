@@ -4,8 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import { DEFAULT_VOICE, DEFAULT_VOICE_MODEL, loadConfig, loadEnvFiles } from '../src/config.js';
-import { createSpeech } from '../src/speech.js';
-import { startMockElevenLabs, toneWav } from './helpers/mock-elevenlabs.js';
+import { createSpeech, wordMarks } from '../src/speech.js';
+import { alignmentFor, startMockElevenLabs, toneWav } from './helpers/mock-elevenlabs.js';
 import { closedPortUrl } from './helpers/mock-ollama.js';
 import { quietLogger, startTestServer } from './helpers/test-server.js';
 
@@ -31,16 +31,18 @@ describe('POST /api/voice/speak with ElevenLabs', () => {
     assert.equal(eleven.calls.length, 0);
   });
 
-  test("Pro text goes to the voice with the server's key, and the audio comes back as base64", async () => {
+  test("Pro text goes to the voice with the server's key; the audio comes back as base64 with when each word starts", async () => {
     const r = await speak(srv, '  MCP is\n Model Context Protocol. ');
     assert.equal(r.status, 200);
     assert.equal(r.body.voice, 'elevenlabs');
     assert.equal(r.body.mime, 'audio/mpeg');
     assert.equal(r.body.cached, false);
     assert.ok(Buffer.from(r.body.audio, 'base64').equals(toneWav()), 'the audio is passed through untouched');
+    // The mock says each character takes 0.06 s: "MCP is Model Context Protocol." starts its words at these.
+    assert.deepEqual(r.body.marks, [0, 0.24, 0.42, 0.78, 1.26]);
     assert.equal(eleven.calls.length, 1);
     const [call] = eleven.calls;
-    assert.equal(call.path, `/v1/text-to-speech/${DEFAULT_VOICE}`);
+    assert.equal(call.path, `/v1/text-to-speech/${DEFAULT_VOICE}/with-timestamps`);
     assert.equal(call.query.output_format, 'mp3_44100_128');
     assert.equal(call.key, 'test-key');
     assert.deepEqual(call.body, {
@@ -55,6 +57,7 @@ describe('POST /api/voice/speak with ElevenLabs', () => {
     const r = await speak(srv, 'MCP is Model Context Protocol.');
     assert.equal(r.status, 200);
     assert.equal(r.body.cached, true);
+    assert.deepEqual(r.body.marks, [0, 0.24, 0.42, 0.78, 1.26], 'the timings are kept with the audio');
     assert.equal(eleven.calls.length, 1);
   });
 
@@ -131,6 +134,26 @@ describe("when ElevenLabs can't speak, the answer is 503 so the overlay uses the
     }
   });
 
+  test('without timed speech (404), GOAT asks for plain audio from then on: the voice plays, no word timings', async () => {
+    const eleven = await startMockElevenLabs();
+    eleven.state.timestamps = false;
+    const warnings = [];
+    const config = loadConfig({ ELEVENLABS_API_KEY: 'test-key', ELEVENLABS_BASE_URL: eleven.url });
+    const speech = createSpeech({ config, logger: { ...quietLogger, warn: (line) => warnings.push(line) } });
+    try {
+      const first = await speech.say('Open Issues from the left menu.');
+      assert.ok(Buffer.from(first.audio, 'base64').equals(toneWav()));
+      assert.equal(first.marks, undefined);
+      assert.deepEqual(eleven.calls.map((c) => c.path.endsWith('/with-timestamps')), [true, false]);
+      await speech.say('Click Create issue.');
+      assert.deepEqual(eleven.calls.map((c) => c.path.endsWith('/with-timestamps')), [true, false, false], 'not asked again');
+      assert.equal(warnings.length, 1);
+      assert.match(warnings[0], /no timed speech here \(404\)/);
+    } finally {
+      await eleven.close();
+    }
+  });
+
   test('an unreachable ElevenLabs is a 503 too', async () => {
     const config = loadConfig({ ELEVENLABS_API_KEY: 'test-key', ELEVENLABS_BASE_URL: await closedPortUrl() });
     const speech = createSpeech({ config, logger: quietLogger });
@@ -152,4 +175,13 @@ test('.env.local is read before .env; a variable already set wins and an empty o
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('word timings line up with the words as the overlay splits them, gaps filled in between', () => {
+  assert.deepEqual(wordMarks('Open  the menu.', alignmentFor('Open the menu.', 0.1)), [0, 0.5, 0.9]);
+  // ElevenLabs reads "3" as "three": that word is placed halfway between its neighbours.
+  assert.deepEqual(wordMarks('Wait 3 seconds now', alignmentFor('Wait three seconds now', 0.1)), [0, 0.55, 1.1, 1.9]); // "three" really starts at 0.5
+  assert.equal(wordMarks('Hello there', { characters: ['H'], character_start_times_seconds: [] }), null, 'arrays that disagree');
+  assert.equal(wordMarks('one two three four', alignmentFor('something else entirely', 0.1)), null, 'mostly unmatched');
+  assert.equal(wordMarks('Hello', null), null);
 });

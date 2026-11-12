@@ -755,7 +755,11 @@ await check('voice: hold to talk shows a live waveform; letting go sends only th
   // the stub has no voice of its own to send, so the Mac's voice reads the answer
   await until(() => page.evaluate(() => window.__spoken.length > 0), "the Mac's voice");
   assert.deepEqual(await page.evaluate(() => window.__spoken), [LLM_REPLY.say]);
-  assert.equal((await bubble()).visible, false, 'a spoken answer is heard: no bubble');
+  // The answer shows as it's said: every word is there, and the marker ends with all of them said.
+  assert.match((await bubble()).text, /Photos are the evidence for every issue\./);
+  assert.doesNotMatch((await bubble()).text, /You said/);
+  await until(() => page.evaluate(() => [...document.querySelectorAll('#goat-bubble .text .w')].every((w) => w.classList.contains('said'))), 'every word said', 6000);
+  assert.equal(await page.evaluate(() => document.getElementById('goat-cursor').dataset.voice), '', 'no swaying bars while GOAT talks');
   assert.equal((await ui()).voice, false, 'the voice turn ends with the answer');
   await shot('ui-16-voice-answer');
 });
@@ -804,7 +808,7 @@ await check('voice: a spoken question that matches a guide reads each step aloud
   await until(async () => (await ui()).guide === null, 'the guide to stop');
 });
 
-await check("voice: GOAT's own voice plays when the server sends one, with no bubble; the Mac's voice is the fallback, then the words", async () => {
+await check("voice: GOAT's own voice plays when the server sends one, its words marked as they're said; the Mac's voice is the fallback", async () => {
   const clip = toneWav(1500).toString('base64'); // the real clips are MP3; Web Audio decodes either
   const say = 'MCP is Model Context Protocol, the open standard that connects AI assistants to tools.';
   const answer = (text) =>
@@ -814,16 +818,24 @@ await check("voice: GOAT's own voice plays when the server sends one, with no bu
       window.GOATUI.setVoice(false);
     }, text);
   const heard = (type) => page.evaluate((t) => window.__speech.filter((e) => e.type === t), type);
+  const marked = () =>
+    page.evaluate(() => {
+      const w = [...document.querySelectorAll('#goat-bubble:not([hidden]) .text .w')];
+      return { words: w.length, said: w.filter((x) => x.classList.contains('said')).length, now: w.findIndex((x) => x.classList.contains('now')) };
+    });
   await page.evaluate(() => {
     window.__speech = [];
     for (const type of ['speak:wait', 'speak:start', 'speak:end']) window.GOATUI.onEvent(type, (e) => window.__speech.push({ type, voice: e.voice, ms: e.ms }));
   });
 
   await spySpeech();
-  await setReply('speak', { audio: clip, mime: 'audio/mpeg', voice: 'elevenlabs' }, 400);
+  // The server says when each word starts: here every 0.1 s, the last at 1.3 s of a 1.5 s clip.
+  const marks = say.split(/\s+/).map((_, i) => i / 10);
+  await setReply('speak', { audio: clip, mime: 'audio/mpeg', voice: 'elevenlabs', marks }, 400);
   await answer(say);
   assert.deepEqual((await calls('speak')).map((c) => c.args), [[say]], 'the text goes to main, which asks the server');
-  assert.equal((await bubble()).visible, false, 'nothing to read while the voice is on its way');
+  assert.equal((await bubble()).visible, true, 'the answer shows while its voice is on its way');
+  assert.deepEqual(await marked(), { words: 14, said: 0, now: -1 }, 'no word is marked before GOAT starts talking');
   assert.equal(await page.evaluate(() => window.GOATUI.speechPending()), true);
   const [start] = await until(async () => {
     const s = await heard('speak:start');
@@ -831,9 +843,17 @@ await check("voice: GOAT's own voice plays when the server sends one, with no bu
   }, "GOAT's voice to start");
   assert.equal(start.voice, 'elevenlabs');
   assert.ok(Math.abs(start.ms - 1500) < 60, `the clip is ${start.ms} ms long`);
-  assert.equal((await bubble()).visible, false, 'heard, not shown');
+  // The marker moves through the words with the voice, by the server's timings.
+  const early = await until(async () => {
+    const m = await marked();
+    return m.now >= 2 && m;
+  }, 'the marker to move', 2000);
+  assert.equal(early.said, early.now, 'every word before the marked one is said');
+  await until(async () => (await marked()).now >= 10, 'the marker near the end', 2500);
   await until(async () => (await heard('speak:end')).length === 1, 'the clip to end', 3000);
-  assert.equal((await bubble()).visible, false);
+  assert.deepEqual(await marked(), { words: 14, said: 14, now: -1 }, 'all said once GOAT stops');
+  assert.equal(await page.evaluate(() => document.getElementById('goat-cursor').dataset.voice), '', 'no swaying bars');
+  await shot('ui-16b-words-said');
   assert.deepEqual(await page.evaluate(() => window.__spoken), [], "the Mac's voice stayed quiet");
   await shot('ui-16b-goat-voice');
 
@@ -852,7 +872,8 @@ await check("voice: GOAT's own voice plays when the server sends one, with no bu
   await until(() => page.evaluate(() => window.__spoken.length === 1), "the Mac's voice");
   assert.deepEqual(await page.evaluate(() => window.__spoken), ['Second answer here.']);
   assert.equal((await heard('speak:start')).length, 0, 'no clip was played');
-  assert.equal((await bubble()).visible, false, "the Mac's voice says it: still no bubble");
+  assert.equal((await bubble()).visible, true, "the Mac's voice says it, and the words show");
+  await until(async () => (await marked()).said === 3, "the Mac's voice's words, said", 4000);
   await page.keyboard.press('Escape');
 
   // Nothing can speak (no voice from the server, none on this Mac): the answer shows in a bubble.
@@ -876,7 +897,7 @@ await check("voice: GOAT's own voice plays when the server sends one, with no bu
 await check('voice: "What\'s MCP?" plays its clip on a cloudy screen first, and the answer is spoken once it ends', async () => {
   // Playwright's Chromium can't play the real H.264 clip; a short WAV plays through the same <video>.
   const clipFile = path.join(artifacts, 'clip-test.wav');
-  fs.writeFileSync(clipFile, toneWav(1600));
+  fs.writeFileSync(clipFile, toneWav(4000)); // long enough for the clouds to roll in first
   await setReply('clipFor', { name: 'MCP', url: pathToFileURL(clipFile).href });
   await setReply('speak', undefined); // no voice from the server: the Mac's reads the answer
   await setReply('ask', LLM_REPLY, 300);
@@ -886,7 +907,11 @@ await check('voice: "What\'s MCP?" plays its clip on a cloudy screen first, and 
       if (!c) return { shown: false };
       const v = c.querySelector('video');
       const f = c.querySelector('.clip-frame').getBoundingClientRect();
-      return { shown: true, playing: !v.paused, cx: f.left + f.width / 2, cy: f.top + f.height / 2, clouds: c.querySelectorAll('.clip-cloud').length };
+      const sides = [...c.querySelectorAll('.clip-cloud:not(.far)')].map((e) => {
+        const r = e.getBoundingClientRect();
+        return r.left + r.width / 2 < innerWidth / 2 ? 'left' : 'right';
+      });
+      return { shown: true, playing: !v.paused, cx: f.left + f.width / 2, cy: f.top + f.height / 2, sides: sides.join(','), fog: Boolean(c.querySelector('.clip-fog')) };
     });
   const askAloud = (q) =>
     page.evaluate((question) => {
@@ -900,19 +925,20 @@ await check('voice: "What\'s MCP?" plays its clip on a cloudy screen first, and 
     const s = await clip();
     return s.shown && s.playing;
   }, 'the clip to play');
-  await page.evaluate(() => Promise.all(document.querySelector('.clip-frame').getAnimations().map((a) => a.finished)));
+  await page.evaluate(() => Promise.all([...document.querySelectorAll('.clip-frame, .clip-cloud')].flatMap((e) => e.getAnimations()).map((a) => a.finished)));
   const shown = await clip();
   assert.ok(Math.abs(shown.cx - 720) < 2 && Math.abs(shown.cy - 450) < 2, `in the middle of the screen: ${JSON.stringify(shown)}`);
-  assert.equal(shown.clouds, 4);
+  assert.equal(shown.sides, 'left,left,left,left,right,right,right,right', 'banks of clouds on both sides');
+  assert.equal(shown.fog, true);
   assert.deepEqual((await calls('clipFor')).map((c) => c.args), [["What's MCP?"]]);
   await until(async () => (await calls('ask')).length === 1, 'the ask, sent at once');
   await shot('ui-22-clip');
   await sleep(300);
   assert.deepEqual(await page.evaluate(() => window.__spoken), [], 'the answer is back, but not a word while the clip plays');
-  await until(async () => !(await clip()).shown, 'the clip to end', 5000);
+  await until(async () => !(await clip()).shown, 'the clip to end', 8000);
   await until(() => page.evaluate(() => window.__spoken.length === 1), 'the answer, spoken after the clip');
   assert.deepEqual(await page.evaluate(() => window.__spoken), [LLM_REPLY.say]);
-  assert.equal((await bubble()).visible, false);
+  assert.match((await bubble()).text, /Photos are the evidence/, 'and its words show as it is said');
   await page.evaluate(() => window.__asked);
 
   // A click on the clouds skips to the answer.

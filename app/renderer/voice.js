@@ -113,7 +113,7 @@
   hud.append(dots);
   ui.cursorEl.append(hud);
 
-  // listening | working | speaking | '' (hidden)
+  // listening | working | '' (hidden)
   function setState(name) {
     ui.cursorEl.dataset.voice = name || '';
     ui.cursorEl.classList.toggle('listening', name === 'listening');
@@ -280,9 +280,10 @@
   });
   ui.onEvent('voice-error', (msg) => ui.showBubble({ kind: 'error', text: msg.message, follow: true }));
 
-  // While GOAT talks, the bars sway; a spoken question's guide reads its steps aloud.
+  // While GOAT talks, its words show in the answer bubble with the one being said marked, so the
+  // HUD steps aside (no swaying bars); a spoken question's guide reads its steps aloud.
   ui.onEvent('speak:start', () => {
-    if (!turn) setState('speaking');
+    if (!turn) setState('');
   });
   ui.onEvent('speak:end', () => {
     const now = ui.cursorEl.dataset.voice;

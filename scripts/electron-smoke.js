@@ -478,7 +478,9 @@ try {
     assert.match(ask.body.messages[0].content, /spoken aloud/);
     const said = 'Photos are the evidence for every issue.';
     await until(() => page.evaluate((t) => window.__speech.some((e) => e.voice === 'elevenlabs' && e.text === t), said), "the answer in GOAT's voice", 8000);
-    assert.equal(await page.evaluate(() => document.getElementById('goat-bubble').hidden), true, 'a spoken answer is heard: no bubble');
+    // Its words show as it's said, every one marked said by the end (timings from ElevenLabs).
+    assert.match(await page.evaluate(() => document.getElementById('goat-bubble').innerText), /Photos are the evidence for every issue\./);
+    await until(() => page.evaluate(() => [...document.querySelectorAll('#goat-bubble .text .w')].every((w) => w.classList.contains('said'))), 'every word said', 8000);
     assert.ok(eleven.calls.some((c) => c.body?.text === said), 'the answer text went to ElevenLabs from the server');
     await page.screenshot({ path: shot('electron-voice.png') });
   });

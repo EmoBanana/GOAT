@@ -22,11 +22,23 @@ export function toneWav(ms = 300, rate = 16000) {
   return b;
 }
 
+// The timings ElevenLabs sends with timed speech: one entry per character, `perChar` seconds each.
+export function alignmentFor(text, perChar = 0.06) {
+  const characters = [...String(text)];
+  return {
+    characters,
+    character_start_times_seconds: characters.map((_, i) => Math.round(i * perChar * 1000) / 1000),
+    character_end_times_seconds: characters.map((_, i) => Math.round((i + 1) * perChar * 1000) / 1000),
+  };
+}
+
 // A stand-in for ElevenLabs text to speech: POST /v1/text-to-speech/:voice with xi-api-key
-// answers audio bytes; errors have the real shape, { detail: { status, message } }.
-// state.fail = { status, detail } makes every call fail that way.
+// answers audio bytes, and …/with-timestamps answers JSON { audio_base64, alignment,
+// normalized_alignment }; errors have the real shape, { detail: { status, message } }.
+// state.fail = { status, detail } makes every call fail that way; state.timestamps = false makes
+// the timed endpoint answer 404, like an account or API without it.
 export async function startMockElevenLabs({ key = 'test-key', audio = toneWav() } = {}) {
-  const state = { key, audio, fail: null, calls: [] };
+  const state = { key, audio, fail: null, timestamps: true, calls: [] };
 
   const server = http.createServer(async (req, res) => {
     const chunks = [];
@@ -43,10 +55,16 @@ export async function startMockElevenLabs({ key = 'test-key', audio = toneWav() 
       res.writeHead(status, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ detail: { status: detail, message: `Mock ${detail}.` } }));
     };
-    if (req.method !== 'POST' || !/^\/v1\/text-to-speech\/[^/]+$/.test(url.pathname)) return fail(404, 'not_found');
+    const route = /^\/v1\/text-to-speech\/[^/]+(\/with-timestamps)?$/.exec(url.pathname);
+    if (req.method !== 'POST' || !route || (route[1] && !state.timestamps)) return fail(404, 'not_found');
     if (req.headers['xi-api-key'] !== state.key) return fail(401, 'invalid_api_key');
     if (state.fail) return fail(state.fail.status, state.fail.detail);
     if (typeof body?.text !== 'string' || !body.text) return fail(422, 'invalid_text');
+    if (route[1]) {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      const alignment = alignmentFor(body.text);
+      return res.end(JSON.stringify({ audio_base64: Buffer.from(state.audio).toString('base64'), alignment, normalized_alignment: alignment }));
+    }
     res.writeHead(200, { 'content-type': 'audio/mpeg' });
     return res.end(state.audio);
   });
