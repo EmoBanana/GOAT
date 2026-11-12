@@ -18,6 +18,8 @@ contextBridge.exposeInMainWorld('goat', {
   transcribe: (audio) => ipcRenderer.invoke('goat:transcribe', audio),
   speak: (text) => ipcRenderer.invoke('goat:speak', text),
   clipFor: (question) => ipcRenderer.invoke('goat:clip-for', question),
+  clipEnded: (how) => ipcRenderer.send('goat:clip-ended', String(how)),
+  talking: (on) => ipcRenderer.send('goat:talking', on === true),
   account: () => ipcRenderer.invoke('goat:account'),
   signIn: (mode) => ipcRenderer.invoke('goat:sign-in', mode),
   signInOffline: () => ipcRenderer.invoke('goat:sign-in-offline'),

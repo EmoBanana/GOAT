@@ -953,6 +953,23 @@ await check("voice: GOAT's own voice plays when the server sends one, its words 
   await setReply('speak', undefined);
 });
 
+await check('while GOAT talks, Esc from any app stops it: main holds Esc only for that long', async () => {
+  await setReply('speak', { audio: toneWav(4000).toString('base64'), mime: 'audio/wav', voice: 'elevenlabs' }, 100);
+  await page.evaluate(() => (window.__calls.length = 0));
+  await page.evaluate(() => {
+    window.GOATUI.setVoice(true);
+    window.GOATUI.handleReply({ id: 'esc', source: 'llm', say: 'A long answer that keeps going for a while yet.', guide: null, sources: [] });
+    window.GOATUI.setVoice(false);
+  });
+  await until(async () => (await calls('talking')).some((c) => c.args[0] === true), 'main told that GOAT is talking');
+  // Main's global Esc arrives as stop-talking: the voice stops and the answer goes.
+  await emit({ type: 'stop-talking' });
+  await until(async () => !(await bubble()).visible, 'the answer hidden');
+  await until(async () => (await calls('talking')).some((c) => c.args[0] === false), 'main told it has stopped, so Esc is everyone\'s again');
+  assert.equal(await page.evaluate(() => window.GOATUI.speechPending()), false);
+  await setReply('speak', undefined);
+});
+
 await check('voice: "What\'s MCP?" plays its clip on a foggy screen first, and the answer is spoken once it ends', async () => {
   // Playwright's Chromium can't play the real H.264 clip; a short WAV plays through the same <video>.
   const clipFile = path.join(artifacts, 'clip-test.wav');

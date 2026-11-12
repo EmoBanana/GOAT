@@ -46,3 +46,16 @@ test('a clip is found only when its file is on this Mac, in the first folder tha
     fs.rmSync(full, { recursive: true, force: true });
   }
 });
+
+test('a short transcript that names MCP has the clip too, since speech to text mishears "what\'s"', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'goat-clips-'));
+  fs.writeFileSync(path.join(dir, 'MCP.mp4'), 'not really a video');
+  try {
+    for (const q of ['What? MCP', 'months mcp', 'What MCP', 'MCP?']) assert.equal(clipFor(q, { dirs: [dir] })?.name, 'MCP', q);
+    for (const q of ['How do I set up MCP?', 'set up MCP', 'Is MCP free?', 'How MCP works', 'Tell me about MCP and GOAT payments today']) {
+      assert.equal(clipFor(q, { dirs: [dir] }), null, q);
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

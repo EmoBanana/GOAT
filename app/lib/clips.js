@@ -11,18 +11,26 @@ const LEAD = String.raw`^\W*(?:(?:hey\s+)?goat\W+)?(?:(?:so|okay|ok|um+|uh+|and|
 const WHAT_IS = String.raw`(?:what(?:['’]s|\s+is)|whats)\s+(?:an?\s+|the\s+)?`;
 const TAIL = String.raw`(?:\s+[a-z]+){0,3}\W*$`;
 
+const MCP = String.raw`(?:mcp|m\.?\s?c\.?\s?p\.?|model\s+context\s+protocol)`;
+// Speech to text doesn't always hear "what's": "What? MCP", "months MCP". A short transcript (four
+// words at most) that names MCP counts too, unless it asks how to do something with it.
+const SHORT_MCP = new RegExp(`\\b${MCP}\\b`, 'i');
+const NOT_WHAT = /^\W*(?:how|where|show|set|setup|install|open|use|enable|configure|connect|can|could|do|does|is|are|should|turn)\b/i;
+const shortMention = (q) => SHORT_MCP.test(q) && !NOT_WHAT.test(q) && (q.match(/[a-z0-9]+/gi) || []).length <= 4;
+
 export const CLIPS = [
   {
     name: 'MCP',
     file: 'MCP.mp4',
-    asked: new RegExp(`${LEAD}${WHAT_IS}(?:mcp|m\\.?\\s?c\\.?\\s?p\\.?|model\\s+context\\s+protocol)${TAIL}`, 'i'),
+    asked: new RegExp(`${LEAD}${WHAT_IS}${MCP}${TAIL}`, 'i'),
+    loosely: shortMention,
   },
 ];
 
 // { name, url } for a question that has a clip on this Mac, else null. dirs: where to look, in order.
 export function clipFor(question, { dirs = [] } = {}) {
   const q = String(question || '').slice(0, 300);
-  const clip = CLIPS.find((c) => c.asked.test(q));
+  const clip = CLIPS.find((c) => c.asked.test(q) || (c.loosely && c.loosely(q)));
   if (!clip) return null;
   for (const dir of dirs.filter(Boolean)) {
     const file = path.join(String(dir), clip.file);

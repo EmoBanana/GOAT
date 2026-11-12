@@ -966,6 +966,7 @@
           setTimeout(() => layer.remove(), 400);
           updateClickThrough();
           emit('clip:end', { how });
+          if (goat.clipEnded) goat.clipEnded(how);
           resolve(how);
         },
       };
@@ -984,6 +985,14 @@
       emit('clip:start', { url });
       Promise.resolve()
         .then(() => video.play())
+        .catch((err) => {
+          // Not allowed to make sound without a click here: better the video muted than none.
+          if (err && err.name === 'NotAllowedError' && !video.muted) {
+            video.muted = true;
+            return video.play();
+          }
+          throw err;
+        })
         .catch(() => me.finish('error'));
     });
   }
@@ -1107,16 +1116,31 @@
     emit('click-through', { on: through });
   }
 
-  document.addEventListener('keydown', (event) => {
-    if (event.key !== 'Escape') return;
-    event.preventDefault();
+  // Esc: stops GOAT talking (and a clip), then closes a panel, stops a guide or hides the bubble.
+  // It comes from the window when GOAT has the keyboard, and from main ('stop-talking') when GOAT
+  // is talking while another app has it.
+  function escape() {
     stopSpeaking();
     if (state.panel) {
       if (panelEscape) panelEscape();
       else closePanel();
     } else if (run) stopGuide('escape');
     else hideBubble();
+  }
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    event.preventDefault();
+    escape();
   });
+  // Main holds Esc for GOAT only while it talks or plays a clip; it tells main when that starts and ends.
+  let talkingNow = false;
+  function syncTalking() {
+    const on = Boolean(shownClip) || Boolean(speech) || Boolean('speechSynthesis' in window && window.speechSynthesis.speaking);
+    if (on === talkingNow) return;
+    talkingNow = on;
+    if (goat.talking) goat.talking(on);
+  }
+  for (const type of ['speak:wait', 'speak:start', 'speak:end', 'clip:start', 'clip:end']) onEvent(type, () => setTimeout(syncTalking, 60));
 
   function greet() {
     if (state.bubble || state.panel || run) return; // never cover something the user asked for
@@ -1190,6 +1214,7 @@
       }
       else if (message.type === 'open-ask') openAsk(message);
       else if (message.type === 'click') onUserClick(message);
+      else if (message.type === 'stop-talking') escape();
       else if (message.type === 'notice' && message.text) toast(String(message.text), { ms: 9000 });
       emit(message.type, message);
     });

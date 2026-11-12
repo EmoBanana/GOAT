@@ -30,6 +30,10 @@ const LEVELS = ['floating', 'torn-off-menu', 'modal-panel', 'main-menu', 'status
 const windowLevel = LEVELS.includes(process.env.GOAT_WINDOW_LEVEL) ? process.env.GOAT_WINDOW_LEVEL : 'modal-panel';
 
 if (process.env.GOAT_USER_DATA) app.setPath('userData', process.env.GOAT_USER_DATA);
+// GOAT's own media plays without a click in its window: a spoken question never clicks there, and
+// Chromium otherwise blocks sound until one (the "What's MCP?" clip didn't start, and GOAT's voice
+// fell back to the Mac's).
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
 // A packaged GOAT talks to the server it was built for (scripts/package.js); GOAT_SERVER_URL wins.
 const build = readBuildInfo(app.getAppPath());
@@ -69,6 +73,17 @@ let holdKeys = null;
 // only while the overlay asks for it. GOAT_CLICK_STEPS=off goes back to Next, hover and waiting;
 // tests (GOAT_FAKE_CLICKS) click through a hook instead.
 let clickWatch = null;
+let escHeld = false;
+let escTimer = null;
+function holdEscape(on) {
+  clearTimeout(escTimer);
+  if (on && !escHeld) escHeld = globalShortcut.register('Escape', () => send({ type: 'stop-talking' }));
+  if (!on && escHeld) {
+    globalShortcut.unregister('Escape');
+    escHeld = false;
+  }
+  if (escHeld) escTimer = setTimeout(() => holdEscape(false), 120_000);
+}
 function setClickWatch(on) {
   if (process.env.GOAT_CLICK_STEPS === 'off') return false;
   if ('GOAT_FAKE_CLICKS' in process.env) return on;
@@ -542,7 +557,21 @@ function registerIpc() {
   ipcMain.handle('goat:transcribe', (event, audio) => (fromOverlay(event) && typeof audio === 'string' ? api.transcribe(audio) : { error: 'forbidden' }));
   ipcMain.handle('goat:speak', (event, text) => (fromOverlay(event) && typeof text === 'string' ? api.speak(text) : { error: 'forbidden' }));
   // A clip to play before a spoken answer ("What's MCP?"), when its file is on this Mac (lib/clips.js).
-  ipcMain.handle('goat:clip-for', (event, question) => (fromOverlay(event) && typeof question === 'string' ? clipFor(question, { dirs: [process.env.GOAT_CLIPS_DIR, path.join(here, '..')] }) : null));
+  ipcMain.handle('goat:clip-for', (event, question) => {
+    if (!fromOverlay(event) || typeof question !== 'string') return null;
+    const clip = clipFor(question, { dirs: [process.env.GOAT_CLIPS_DIR, path.join(here, '..')] });
+    if (clip) note(`clip ${clip.name} for a spoken question`);
+    return clip;
+  });
+  // How a clip ended (ended, skipped, cancelled, error, timeout), for the ask log.
+  ipcMain.on('goat:clip-ended', (event, how) => {
+    if (fromOverlay(event)) note(`clip ${String(how).replace(/[^a-z]/g, '').slice(0, 12)}`);
+  });
+  // While GOAT talks or plays a clip, Esc stops it from any app: GOAT holds Esc only for that
+  // long (and never longer than two minutes), then every app has it back.
+  ipcMain.on('goat:talking', (event, on) => {
+    if (fromOverlay(event)) holdEscape(on === true);
+  });
   ipcMain.handle('goat:topup', (event, myr) => (fromOverlay(event) ? api.topup(Number(myr) || 10) : { error: 'forbidden' }));
   ipcMain.handle('goat:upgrade', (event) => (fromOverlay(event) ? api.upgradePro() : { error: 'forbidden' }));
   ipcMain.on('goat:open-link', (event, url) => {
