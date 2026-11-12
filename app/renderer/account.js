@@ -273,15 +273,20 @@
     else ui.toast(`The sign-in page expired. Press ${ui.hotkey('account')} to start again.`, { ms: 8000 });
   });
 
-  // On launch: no account yet means the welcome panel.
-  Promise.resolve(goat.account ? goat.account() : null)
-    .then((first) => {
-      if (first && typeof first.signedIn === 'boolean') {
-        info = { signedIn: first.signedIn, account: first.account || null, userId: first.userId || '' };
-        if (!first.signedIn) openWelcome();
-      }
-    })
-    .catch(() => {});
+  // On launch: a downloaded app first asks for the permissions it's missing (permissions.js), then
+  // no account yet means the welcome panel.
+  async function start() {
+    const first = goat.account ? await goat.account() : null;
+    if (!first || typeof first.signedIn !== 'boolean') return;
+    info = { signedIn: first.signedIn, account: first.account || null, userId: first.userId || '' };
+    const welcome = () => {
+      if (info && !info.signedIn && !isOpen('welcome')) openWelcome();
+    };
+    const missing = window.GOATPermissions ? await window.GOATPermissions.check() : null;
+    if (missing) window.GOATPermissions.open(missing, welcome);
+    else welcome();
+  }
+  start().catch(() => {});
 
-  window.GOATAccount = { info: () => info, openWelcome, open: openAccountPanel };
+  window.GOATAccount = { info: () => info, openWelcome, open: openAccountPanel, start };
 })();

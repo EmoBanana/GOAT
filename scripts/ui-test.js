@@ -1122,6 +1122,60 @@ const OLD_CHAT = {
   ],
 };
 
+await check('a downloaded app asks for every permission before sign-in: Allow all, Open Settings, then the sign-in card', async () => {
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => (window.__calls.length = 0));
+  const item = (id, label, state) => ({ id, label, why: `${label} for GOAT.`, state });
+  const status = (states, ask = true) => ({
+    platform: 'darwin',
+    ask,
+    needed: Object.values(states).some((s) => s !== 'granted'),
+    items: [item('accessibility', 'Accessibility', states.accessibility), item('screen', 'Screen Recording', states.screen), item('microphone', 'Microphone', states.microphone), item('automation', 'Automation', states.automation)],
+    note: 'In Chrome, Edge, Brave or Arc, also turn on View › Developer › Allow JavaScript from Apple Events, so GOAT can read the page.',
+  });
+  await setReply('account', { signedIn: false, account: null, userId: 'ivanw' });
+  // Not a downloaded app (or nothing missing): straight to sign-in, as before.
+  await setReply('permissions', status({ accessibility: 'ask', screen: 'ask', microphone: 'ask', automation: 'ask' }, false));
+  await page.evaluate(() => window.GOATAccount.start());
+  await page.waitForSelector('.panel-welcome', { state: 'visible' });
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => window.GOATUI.closePanel());
+  // A downloaded app missing everything: the permissions card comes first.
+  await setReply('permissions', status({ accessibility: 'ask', screen: 'ask', microphone: 'ask', automation: 'ask' }));
+  await setReply('allowPermissions', status({ accessibility: 'settings', screen: 'settings', microphone: 'granted', automation: 'granted' }), 300);
+  await page.evaluate(() => window.GOATAccount.start());
+  await page.waitForSelector('.panel-permissions', { state: 'visible' });
+  assert.equal(await page.locator('.panel-welcome').count(), 0, 'sign-in waits');
+  const text = await page.locator('.panel-permissions').innerText();
+  assert.match(text, /Before you start[\s\S]*Accessibility[\s\S]*Screen Recording[\s\S]*Microphone[\s\S]*Automation[\s\S]*Allow JavaScript from Apple Events[\s\S]*Allow all/);
+  assert.ok(await page.evaluate(() => document.querySelector('.panel-permissions').classList.contains('dock-right')), 'a docked card that leaves the apps usable');
+  await shot('ui-16b-permissions');
+  // Allow all: one call brings up the prompts; the button waits meanwhile.
+  await page.click('[data-action="all"]');
+  await until(() => page.evaluate(() => /Answer the prompts/.test(document.querySelector('[data-action="all"]').innerText)), 'the waiting button');
+  await until(() => page.evaluate(() => document.querySelector('.perm-row[data-id="microphone"]').dataset.state === 'granted'), 'the microphone to turn on');
+  assert.deepEqual((await calls('allowPermissions'))[0].args, [null]);
+  assert.match(await page.locator('.perm-row[data-id="microphone"]').innerText(), /On/);
+  // What only System Settings can switch on opens it there.
+  await page.click('[data-settings="screen"]');
+  assert.deepEqual((await calls('permissionSettings'))[0].args, ['screen']);
+  assert.match(await page.locator('[data-action="all"]').innerText(), /Open System Settings/);
+  // Switched on in Settings: the card notices by itself, says so, and sign-in follows.
+  await setReply('permissions', status({ accessibility: 'granted', screen: 'granted', microphone: 'granted', automation: 'granted' }));
+  await page.waitForSelector('.panel-welcome', { state: 'visible', timeout: 5000 });
+  await until(() => page.evaluate(() => /All set/.test(document.getElementById('goat-toasts').innerText)), 'the all-set toast');
+  // Not now skips it for this launch, and sign-in still comes.
+  await page.evaluate(() => window.GOATUI.closePanel());
+  await setReply('permissions', status({ accessibility: 'ask', screen: 'granted', microphone: 'granted', automation: 'granted' }));
+  await page.evaluate(() => window.GOATAccount.start());
+  await page.waitForSelector('.panel-permissions', { state: 'visible' });
+  await page.click('.card-foot [data-action="later"]');
+  await page.waitForSelector('.panel-welcome', { state: 'visible' });
+  await page.evaluate(() => window.GOATUI.closePanel());
+  await setReply('permissions', undefined);
+  await setReply('account', undefined);
+});
+
 await check('welcome: without an account GOAT asks you to sign in; the card closes once the browser takes over', async () => {
   await page.keyboard.press('Escape');
   await page.evaluate(() => (window.__calls.length = 0));

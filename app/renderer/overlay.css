@@ -505,6 +505,23 @@ body {
 .panel.dock-right .welcome-actions button { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 44px; padding: 10px 14px; font-size: 14px; text-align: left; }
 .panel.dock-right .welcome-actions svg { flex: none; width: 13px; height: 13px; transition: transform 0.1s ease; }
 .panel.dock-right .welcome-actions button:hover svg { transform: translate(2px, -2px); }
+/* Before you start: one ruled row per permission, its button (or On) at the right. */
+.perm-list { display: grid; margin: 0 0 12px; padding: 0; list-style: none; border: 1px solid var(--line-strong); }
+.perm-row { display: flex; align-items: center; gap: 12px; padding: 9px 10px 9px 12px; border-bottom: 1px solid var(--line-strong); }
+.perm-row:last-child { border-bottom: 0; }
+.perm-text { flex: 1; min-width: 0; }
+.perm-name { font-size: 13px; font-weight: 700; }
+.perm-why { margin-top: 2px; color: var(--muted); font: 500 11px/1.4 var(--mono); }
+.perm-on { flex: none; padding: 3px 8px; font: 700 11px/1.2 var(--mono); }
+.perm-note { margin: 0 0 12px; color: var(--muted); font: 500 11px/1.45 var(--mono); }
+.panel.dock-right .perm-list { border: var(--nb-rule); }
+.panel.dock-right .perm-row { border-bottom-color: var(--nb-ink); }
+.panel.dock-right .perm-row[data-state='granted'] { background: var(--nb-grey); }
+.panel.dock-right .perm-why, .panel.dock-right .perm-note { color: var(--nb-soft); }
+.panel.dock-right .perm-on { border: var(--nb-rule); background: var(--nb-yellow); color: var(--nb-ink); }
+.panel.dock-right .perm-row button { flex: none; padding: 6px 10px; border: var(--nb-rule); border-radius: 0; background: var(--paper); color: var(--nb-ink); font: 700 12px/1.2 var(--font); white-space: nowrap; box-shadow: 2px 2px 0 var(--nb-ink); }
+.panel.dock-right .perm-row button:hover { background: var(--nb-yellow); }
+.panel.dock-right .perm-row button:disabled { background: var(--nb-grey); color: #8a8f98; box-shadow: none; }
 /* Account: the balance on signal yellow, today's timesheet in a ruled box to match, then chats. */
 .panel.dock-right :is(.acct-wallet, .acct-sheet) { border: var(--nb-rule); border-radius: 0; background: var(--paper); }
 .panel.dock-right .acct-wallet { background: var(--nb-yellow); }

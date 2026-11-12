@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, powerMonitor, screen, shell, systemPreferences, Tray } from 'electron';
+import { app, BrowserWindow, desktopCapturer, globalShortcut, ipcMain, Menu, nativeImage, powerMonitor, screen, shell, systemPreferences, Tray } from 'electron';
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -18,6 +18,7 @@ import { getUserId } from './lib/identity.js';
 import { buildGuide, createRecorder } from './lib/recorder.js';
 import { createPayer } from './lib/wallet.js';
 import { createTracker } from './lib/tracker.js';
+import { createPermissions } from './lib/permissions.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const isMac = process.platform === 'darwin';
@@ -53,6 +54,17 @@ const tracker = createTracker({
   intervalMs: Math.max(0.1, Number(process.env.GOAT_TRACK_INTERVAL_SEC) || 10) * 1000,
   idleSec: Number(process.env.GOAT_IDLE_SEC) || 300,
   idleSeconds: () => powerMonitor.getSystemIdleTime(),
+});
+// The downloaded app asks for every permission when it starts (a card before sign-in), not on the
+// first question. A dev run from the repo already has them through its terminal, so it doesn't ask
+// unless GOAT_PERMISSIONS=ask; GOAT_PERMISSIONS=off never asks.
+const permissions = createPermissions({
+  platform: process.platform,
+  prefs: systemPreferences,
+  capturer: desktopCapturer,
+  shell,
+  file: () => path.join(app.getPath('userData'), 'permissions.json'),
+  enabled: process.env.GOAT_PERMISSIONS === 'ask' || (process.env.GOAT_PERMISSIONS !== 'off' && app.isPackaged && process.env.GOAT_TEST_HOOKS !== '1'),
 });
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 function localDate(d = new Date()) {
@@ -677,6 +689,9 @@ function registerIpc() {
   ipcMain.handle('goat:chat', overlayOnly((id) => (CHAT_ID.test(String(id)) ? api.chat(id) : { error: 'not_found', message: 'No such chat.' })));
   ipcMain.handle('goat:delete-chat', overlayOnly((id) => (CHAT_ID.test(String(id)) ? api.deleteChat(id) : { error: 'not_found', message: 'No such chat.' })));
   ipcMain.handle('goat:clear-chats', overlayOnly(() => api.clearChats()));
+  ipcMain.handle('goat:permissions', overlayOnly(() => permissions.status()));
+  ipcMain.handle('goat:allow-permissions', overlayOnly((id) => permissions.request(typeof id === 'string' ? id : null)));
+  ipcMain.handle('goat:permission-settings', overlayOnly((id) => permissions.openSettings(String(id))));
 }
 
 function registerHotkeys() {
