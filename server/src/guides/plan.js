@@ -3,9 +3,13 @@
 // (labels and positions read by the app). Steps name controls by label; the app finds each one on
 // screen right before its step, so resolution and window size don't matter. The first step must
 // be a control that is on screen now, or there's no guide (GOAT answers in words instead).
-// A polite "can you" or "please" in front is fine ("can you show me how to search on Google?").
-export const HOW_TO =
-  /^\s*(?:(?:hey\s+)?goat[,!]?\s+)?(?:(?:can|could|would|will)\s+you\s+|please\s+)?(how (do|can|should|would) (i|we|you)|how to|where (do|can) i|where is|where are|where's|show me|guide me|walk me through|take me|point (me )?(to|at)|help me (find|get|do|set)|what do i (click|press))\b/i;
+// How-to questions: these openings (a polite "can you" or "please" in front is fine), or asking to
+// be shown anywhere in the question ("how do I search on Google? show me", a spoken "okay, can you
+// show me…"). The app has the same patterns (app/lib/open-place.js).
+export const SHOW_ME = /\b(?:show (?:me|us|it|how)|guide me|walk me through|take me (?:to|through)|point (?:me )?(?:to|at)|point (?:it |that )?out|visual guide|demonstrate)\b/i;
+const HOW_TO_START =
+  /^\s*(?:(?:hey\s+)?goat[,!]?\s+)?(?:(?:can|could|would|will)\s+you\s+(?:please\s+)?|please\s+)?(?:how (?:do|can|should|would) (?:i|we|you)|how to|where (?:do|can|should) i|where (?:is|are|to)|where's|help me (?:find|get|do|set)|what do i (?:click|press))\b/i;
+export const HOW_TO = new RegExp(`${HOW_TO_START.source}|${SHOW_ME.source}`, 'i');
 export const MAX_PLAN_STEPS = 6;
 const MAX_LISTED = 120;
 

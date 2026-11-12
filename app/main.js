@@ -1,12 +1,13 @@
 import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, powerMonitor, screen, shell, systemPreferences, Tray } from 'electron';
 import { execFile } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sampleActiveWindow } from './lib/active-window.js';
 import { captureRegion } from './lib/capture.js';
 import { documentHint, documentKind, readDocument } from './lib/doc-context.js';
 import { findTarget, readTargets, targetAt } from './lib/screen-targets.js';
-import { bringUp, placeToOpen, SHOW_ME } from './lib/open-place.js';
+import { bringUp, frontTab, HOW_TO, placeToOpen, SHOW_ME } from './lib/open-place.js';
 import { startHoldKeys } from './lib/hold-keys.js';
 import { validRegion } from './lib/region.js';
 import { createApi } from './lib/api.js';
@@ -65,6 +66,19 @@ let holdKeys = null;
 let streamPaused = false; // test hooks drive the cursor instead
 
 const log = (...args) => console.log('[goat]', ...args);
+// What each ask did, step by step, also kept in userData/goat.log: when a guide doesn't come, the
+// line says where it stopped. App names, counts and timings only: no questions, window titles,
+// addresses or control names.
+function note(line) {
+  log(line);
+  try {
+    const file = path.join(app.getPath('userData'), 'goat.log');
+    if (fs.existsSync(file) && fs.statSync(file).size > 256 * 1024) fs.renameSync(file, `${file}.1`);
+    fs.appendFileSync(file, `${new Date().toISOString()} ${line}\n`);
+  } catch {
+    // the terminal still has it
+  }
+}
 
 function send(message) {
   if (win && !win.isDestroyed()) win.webContents.send('goat:event', message);
@@ -171,6 +185,7 @@ function startCursorStream() {
 function focusOverlay() {
   if (!win) return;
   win.setIgnoreMouseEvents(false);
+  if (quietTests) return; // a test drives the page itself; the keyboard stays with the user
   if (isMac) app.focus({ steal: true });
   win.focus();
 }
@@ -185,7 +200,6 @@ async function openAsk(source = 'hotkey') {
     const sample = await sampleActiveWindow({ timeoutMs: 700 });
     if (sample && !isSelf(sample)) {
       askContext = { app: sample.app, title: sample.title, url: sample.url || '' };
-  if (quietTests) return; // a test drives the page itself; the keyboard stays with the user
       askPid = Number(sample.pid) || 0;
     }
     focusOverlay();
@@ -345,41 +359,45 @@ async function readFrontDocument({ quiet = false } = {}) {
 
 // The controls on screen in the app asked about (lib/screen-targets.js). A how-to question takes
 // them along so GOAT can plan a guide; during a guide, each step's control is found again live.
-// The same as the server's HOW_TO (server/src/guides/plan.js), a polite "can you" or "please" included.
-const HOW_TO =
-  /^\s*(?:(?:hey\s+)?goat[,!]?\s+)?(?:(?:can|could|would|will)\s+you\s+|please\s+)?(how (do|can|should|would) (i|we|you)|how to|where (do|can) i|where is|where are|where's|show me|guide me|walk me through|take me|point (me )?(to|at)|help me (find|get|do|set)|what do i (click|press))\b/i;
+// (HOW_TO, the how-to questions, lives in lib/open-place.js; the server has the same pattern.)
 let guideApp = { app: '', pid: 0 };
-// A show-me question wants the cursor, so when the controls can't be read it says what to switch
-// on every time; other how-to questions say it once.
+// Resolves to { targets, why }: the controls, or null and why there are none. A show-me question
+// wants the cursor, so when the controls can't be read it says so every time (what to switch on,
+// when GOAT knows); other how-to questions get the hint once.
 async function readFrontTargets({ showMe = false } = {}) {
   guideApp = { app: askContext.app || '', pid: askPid };
   send({ type: 'progress', step: 'Looking at the controls on screen' });
   const read = await readTargets(guideApp);
-  if (!read || read.error) {
-    const hint = read?.error ? documentHint({ kind: 'page', app: guideApp.app, error: read.error }, { purpose: 'point' }) : '';
-    const key = `${guideApp.app}:${read?.error}:point`;
-    if (hint && (showMe || !docHints.has(key))) {
-      docHints.add(key);
-      send({ type: 'notice', text: hint });
-    }
-    return null;
+  if (read?.elements?.length) return { targets: read.elements, why: '' };
+  const why = !guideApp.app ? 'no app in front' : read?.error || (read ? 'none found' : 'not readable');
+  const hint = read?.error ? documentHint({ kind: 'page', app: guideApp.app, error: read.error }, { purpose: 'point' }) : '';
+  const key = `${guideApp.app}:${read?.error}:point`;
+  if (hint && (showMe || !docHints.has(key))) {
+    docHints.add(key);
+    send({ type: 'notice', text: hint });
+  } else if (showMe) {
+    send({ type: 'notice', text: guideApp.app ? `GOAT can't see the buttons in ${guideApp.app} right now, so it answered in words.` : "GOAT couldn't tell which app is in front, so it answered in words." });
   }
-  return read.elements.length ? read.elements : null;
+  return { targets: null, why };
 }
 
 // "Show me … on Google / in Excel" with something else in front: GOAT opens it first (a website in
 // the default browser, an app by name) so the cursor can show the steps there (lib/open-place.js).
 const openedPlaces = []; // tests: what GOAT would have opened
+const runOpen = (args) => new Promise((resolve, reject) => execFile('open', args, { timeout: 10_000 }, (err) => (err ? reject(err) : resolve())));
 function openPlace(place) {
-  if (process.env.GOAT_TEST_HOOKS === '1') {
+  // Tests open nothing: the stand-in window (GOAT_FAKE_OPENS, "App|Title|URL") comes to the front.
+  if ('GOAT_FAKE_OPENS' in process.env) {
     openedPlaces.push(place.url || place.app);
     if (process.env.GOAT_FAKE_OPENS) process.env.GOAT_FAKE_WINDOW = process.env.GOAT_FAKE_OPENS;
     return Promise.resolve();
   }
-  if (place.url) return shell.openExternal(place.url);
-  if (!isMac) return Promise.reject(new Error('Apps open by name on macOS only.'));
-  return new Promise((resolve, reject) => execFile('open', ['-a', place.app], { timeout: 10_000 }, (err) => (err ? reject(err) : resolve())));
+  // macOS: `open` brings the browser or app forward whichever app is active (after a voice ask
+  // GOAT itself is in the background).
+  if (isMac) return runOpen(place.url ? [place.url] : ['-a', place.app]);
+  return place.url ? shell.openExternal(place.url) : Promise.reject(new Error('Apps open by name on macOS only.'));
 }
+const bringForward = (name) => (isMac && !('GOAT_FAKE_OPENS' in process.env) ? runOpen(['-a', name]) : Promise.resolve());
 
 // Polls the server for an ask's steps and passes new ones to the overlay. stop() reads once more,
 // so a quick answer still shows its steps before the reply arrives.
@@ -571,21 +589,29 @@ function registerIpc() {
     // "Show me how to search on Google" with the IDE in front: open Google first, then plan the
     // steps there. The screen read before that shows the old app, so it goes.
     const showMe = SHOW_ME.test(question);
+    const howTo = HOW_TO.test(question);
+    const trail = [`${payload?.voice === true ? 'voice ask' : 'ask'}${showMe ? ' (show me)' : howTo ? ' (how-to)' : ''} with ${askContext.app || 'no app'} in front`];
     const place = region ? null : placeToOpen(question, askContext);
     if (place) {
       send({ type: 'progress', step: `Opening ${place.name}` });
-      const front = await bringUp(place, { open: openPlace, sample: () => sampleActiveWindow({ timeoutMs: 700 }) });
+      const began = Date.now();
+      const front = await bringUp(place, { open: openPlace, sample: () => sampleActiveWindow({ timeoutMs: 700 }), tab: frontTab, activate: bringForward });
       if (front && !isSelf(front)) {
         askContext = { app: front.app, title: front.title, url: front.url || '' };
         askPid = Number(front.pid) || 0;
         screenShot = null;
+        trail.push(`opened ${place.name}: up in ${front.app} after ${Date.now() - began} ms`);
       } else {
-        log(`couldn't bring up ${place.name}`);
+        trail.push(`opened ${place.name}: it never came up (${Date.now() - began} ms)`);
+        send({ type: 'notice', text: `${place.name} didn't come up, so GOAT answered in words.` });
       }
     }
     const context = region ? { ...askContext, region } : screenShot ? { ...askContext, region: screenShot.region } : askContext;
     // A how-to question also takes the controls on screen, so GOAT can plan a guide around them.
-    const [document, targets] = await Promise.all([readFrontDocument({ quiet: showMe }), HOW_TO.test(question) ? readFrontTargets({ showMe }) : null]);
+    const [document, controls] = await Promise.all([readFrontDocument({ quiet: showMe }), howTo && !region ? readFrontTargets({ showMe }) : null]);
+    const targets = controls?.targets || null;
+    if (howTo && !region) trail.push(targets ? `${targets.length} controls` : `no controls (${controls?.why})`);
+    if (document) trail.push(`${document.kind} read`);
     // The server's steps ("Checking the guides"…) go to the readout while the answer comes.
     const progressId = globalThis.crypto.randomUUID();
     const steps = watchSteps(progressId);
@@ -595,7 +621,10 @@ function registerIpc() {
     } finally {
       await steps.stop();
     }
-    log(reply.error ? `ask failed: ${reply.error}` : `ask -> ${reply.source}${reply.guide ? ` (${reply.guide.id})` : ''} in ${reply.latencyMs} ms`);
+    trail.push(reply.error ? `failed: ${reply.error}` : reply.source === 'guide' ? `guide ${reply.planned ? 'planned' : reply.guide?.id}, ${reply.guide?.steps?.length} steps, ${reply.latencyMs} ms` : `answered in words, ${reply.latencyMs} ms`);
+    note(trail.join(' | '));
+    // Asked to be shown, the controls were there, and still no guide: say so rather than only answering.
+    if (showMe && targets && !reply.error && reply.source !== 'guide') send({ type: 'notice', text: "GOAT couldn't work out the clicks on this screen, so it answered in words." });
     // While tracking, a guide GOAT plays goes into the timesheet line for that stretch.
     if (!reply.error && reply.source === 'guide' && reply.guide) tracker.note({ guide: reply.guide.title || reply.guide.id, app: context.app });
     if (!reply.error) reply.where = whereItRuns(serverUrl); // "running on this laptop" only when it does
@@ -618,6 +647,7 @@ function registerIpc() {
     const app = guideApp.app || askContext.app || '';
     const read = await readTargets({ app, pid: guideApp.pid || askPid });
     const hit = read && !read.error ? findTarget(read.elements, target.label.slice(0, 80), String(target.role || '')) : null;
+    if (!hit) note(`guide step: its control wasn't found in ${app || 'no app'} (${read?.error || `${read?.elements?.length ?? 0} controls read`})`);
     return hit ? { x: hit.x, y: hit.y, w: hit.w, h: hit.h, label: hit.label } : null;
   });
   // Account and chats.

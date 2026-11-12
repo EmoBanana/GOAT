@@ -10,7 +10,11 @@ const SCREEN = [T('Issues', 'link', 10, 100), T('Photos', 'link', 10, 140), T('C
 test('how-to questions are the ones GOAT can guide', () => {
   for (const q of ['how do I filter issues?', 'How to export the list', 'where do I find photos', "where's the export button", 'show me how to add a photo', 'walk me through closing an issue', 'what do I click to export?']) assert.match(q, HOW_TO, q);
   for (const q of ['Can you show me how to search on Google?', 'please show me where the filters are', 'Hey GOAT, show me how to export', 'point me to the export button', 'where are the filters']) assert.match(q, HOW_TO, q);
-  for (const q of ['why do issues need a photo?', 'what is MCP?', 'summarise this deck', 'hi', 'can you summarise this deck?']) assert.doesNotMatch(q, HOW_TO, q);
+  // Asking to be shown counts wherever it comes, as people say and type it.
+  for (const q of ['I want to search on google, can you show me how?', 'Okay, so show me how to export the list', 'could you please show me where the filters are', 'filtering issues, walk me through it', 'I want a visual guide for exporting', 'where to find the export button']) {
+    assert.match(q, HOW_TO, q);
+  }
+  for (const q of ['why do issues need a photo?', 'what is MCP?', 'summarise this deck', 'hi', 'can you summarise this deck?', 'I showed my manager the list', 'what does this show?']) assert.doesNotMatch(q, HOW_TO, q);
 });
 
 test('controls are matched by name, loosely', () => {

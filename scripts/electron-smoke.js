@@ -28,6 +28,7 @@ const env = {
   GOAT_USER_DATA: userData,
   GOAT_TEST_HOOKS: '1',
   GOAT_FAKE_WINDOW: 'Google Chrome|Forma Build - Issues',
+  GOAT_FAKE_OPENS: '', // "show me" opens no real app or website here; a check names the window that comes up
   GOAT_USER: 'e2e-tester',
   GOAT_FAKE_CAPTURE: '1', // tests can't grant Screen Recording
   GOAT_TRACK_INTERVAL_SEC: '0.2',
@@ -258,9 +259,14 @@ try {
     });
     try {
       ollama.calls.length = 0;
-      await askThroughMain('can you show me how to search on google?');
+      // "Show me" in the middle of the question, as people say it.
+      await askThroughMain('I want to search on google, can you show me how?');
       await until(() => page.evaluate(() => window.GOATUI.state().guide?.index === 0 && window.GOATUI.state().guide.landed), 'the guide on Google');
       assert.deepEqual(await app.evaluate(() => globalThis.__goatTest.opened()), ['https://www.google.com/']);
+      // The ask's steps are on disk for when a guide doesn't come: apps, counts and timings only.
+      const trail = fs.readFileSync(path.join(userData, 'goat.log'), 'utf8').trim().split('\n').at(-1);
+      assert.match(trail, /ask \(show me\) with Antigravity IDE in front \| opened Google: up in Microsoft Edge after \d+ ms \| 2 controls \| guide planned, 2 steps, \d+ ms$/);
+      assert.doesNotMatch(fs.readFileSync(path.join(userData, 'goat.log'), 'utf8'), /search on google|main\.js|google\.com/i, 'no questions, window titles or addresses');
       assert.ok((await page.evaluate(() => window.__showSteps)).includes('Opening Google'), 'the readout says what it opened');
       const planned = ollama.chats().find((c) => c.body.format);
       assert.match(planned.body.messages.at(-1).content, /^App: Microsoft Edge · Window: Google/, 'planned on the page it opened');
@@ -276,6 +282,13 @@ try {
       await until(() => page.evaluate(() => !document.getElementById('goat-bubble').hidden && !window.GOATUI.state().guide), 'the answer in words');
       assert.deepEqual(await app.evaluate(() => globalThis.__goatTest.opened()), ['https://www.google.com/'], 'nothing else opened');
       assert.ok(ollama.chats().every((c) => !c.body.format), 'not planned on the IDE');
+      await page.keyboard.press('Escape');
+      // Asked to be shown, but the app's controls can't be read: GOAT says why it answered in words.
+      await setTargets(null);
+      await askThroughMain('show me how to open the terminal');
+      await until(() => page.evaluate(() => /can't see the buttons in Antigravity IDE/.test(document.getElementById('goat-toasts').innerText)), 'the notice');
+      await until(() => page.evaluate(() => !document.getElementById('goat-bubble').hidden && !window.GOATUI.state().guide), 'the answer in words');
+      assert.match(fs.readFileSync(path.join(userData, 'goat.log'), 'utf8').trim().split('\n').at(-1), /ask \(show me\) with Antigravity IDE in front \| no controls \(not readable\) \| answered in words, \d+ ms$/);
       await page.keyboard.press('Escape');
     } finally {
       ollama.state.reply = before;

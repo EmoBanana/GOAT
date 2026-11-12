@@ -41,6 +41,15 @@ function run(argv) {
 }
 `;
 
+// The app in front and its pid alone: NSWorkspace only, so no permission and no System Events.
+const JXA_APP = `
+function run() {
+  ObjC.import('AppKit');
+  const front = $.NSWorkspace.sharedWorkspace.frontmostApplication;
+  return JSON.stringify({ app: ObjC.unwrap(front.localizedName) || '', title: '', pid: front.processIdentifier });
+}
+`;
+
 // A tab's site: the host name only ("https://www.canva.com/design/x?y=1" -> "canva.com").
 export function siteOf(url) {
   try {
@@ -108,6 +117,13 @@ export async function sampleActiveWindow({ env = process.env, platform = process
     const args = site ? [allow ? JSON.stringify(allow) : '', 'site'] : allow ? [JSON.stringify(allow)] : [];
     const stdout = await run('osascript', ['-l', 'JavaScript', '-e', JXA, ...args], timeoutMs);
     sample = stdout ? parseSample(stdout) : null;
+    // System Events can take about a second when it has been idle (0.94 s measured, against the
+    // ask's 0.7 s). For an ask, the app and pid alone still say what's in front, so a slow title
+    // doesn't cost both: without them GOAT has no controls to read and answers in words.
+    if (!sample && !allow && !site) {
+      const quick = await run('osascript', ['-l', 'JavaScript', '-e', JXA_APP], 1500);
+      sample = quick ? parseSample(quick) : null;
+    }
   } else if (platform === 'win32') {
     const stdout = await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', POWERSHELL], timeoutMs);
     sample = stdout ? parseSample(stdout) : null;

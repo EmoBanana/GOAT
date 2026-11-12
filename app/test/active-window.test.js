@@ -21,6 +21,21 @@ test('the sampler returns null when osascript fails or off macOS', async () => {
   assert.deepEqual(ok, { app: 'Safari', title: 'Issues', pid: 9 });
 });
 
+test('an ask still learns which app is in front when the title read is too slow', async () => {
+  const scripts = [];
+  const run = async (_command, args) => {
+    scripts.push(args[3]);
+    return scripts.length === 1 ? null : '{"app":"Antigravity IDE","title":"","pid":42}';
+  };
+  assert.deepEqual(await sampleActiveWindow({ env: {}, platform: 'darwin', run }), { app: 'Antigravity IDE', title: '', pid: 42 });
+  assert.equal(scripts.length, 2);
+  assert.doesNotMatch(scripts[1], /System Events/, 'the second read is NSWorkspace only');
+  // Tracking keeps to its allowlist: no second read, the sample is simply missed.
+  let calls = 0;
+  assert.equal(await sampleActiveWindow({ env: {}, platform: 'darwin', run: async () => (calls++, null), allow: ['Revit'] }), null);
+  assert.equal(calls, 1);
+});
+
 test('with an allowlist, titles of other apps are blanked and the list reaches the sampler', async () => {
   let argsSeen = null;
   const run = async (_cmd, args) => {
