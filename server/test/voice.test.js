@@ -74,6 +74,11 @@ describe('POST /api/voice/transcribe', () => {
 });
 
 describe('transcription guards', () => {
+  test('an instruction Gemma echoes onto the transcript is dropped', () => {
+    assert.equal(cleanTranscript('What is model context protocol transcribe this audio'), 'What is model context protocol');
+    assert.equal(cleanTranscript('Transcript: "How do I log an issue?"'), 'How do I log an issue?');
+  });
+
   test('NO_SPEECH and a recited term list are a 422 no_speech, never a question', async () => {
     const ollama = await startMockOllama({ transcript: 'NO_SPEECH' });
     const srv = await startTestServer({ ollamaUrl: ollama.url, users: { pat: { id: 'pat', proUntil: Date.now() + 86_400_000 } } });

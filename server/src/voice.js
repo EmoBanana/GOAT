@@ -47,6 +47,8 @@ export function cleanTranscript(text) {
     .trim()
     .replace(/^(transcript(ion)?|the speaker says)\s*:\s*/i, '')
     .replace(/^["'“”‘’]+|["'“”‘’]+$/g, '')
+    // Gemma sometimes tacks its own instruction on ("…MCP transcribe this audio").
+    .replace(/[\s,.;:-]*transcribe this audio[.!]?\s*$/i, '')
     .replace(/\s+/g, ' ')
     .trim();
 }

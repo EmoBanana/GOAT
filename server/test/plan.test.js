@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test, { describe } from 'node:test';
-import { checkPlan, cleanTargets, findTarget, HOW_TO, planMessages, PLAN_SCHEMA } from '../src/guides/plan.js';
+import { aboutAnotherApp, checkPlan, cleanTargets, findTarget, HOW_TO, planMessages, PLAN_SCHEMA } from '../src/guides/plan.js';
 import { startMockOllama } from './helpers/mock-ollama.js';
 import { startTestServer } from './helpers/test-server.js';
 
@@ -38,7 +38,8 @@ test('the planner sees the controls (quoted, once each), the procedures, the pag
   assert.match(user.content, /Company procedures:\nEvery issue needs a photo\./);
   assert.match(user.content, /The page open now:\nIssues \(12 open\)/);
   assert.match(user.content, /Task: how do I filter issues\?$/);
-  assert.deepEqual(PLAN_SCHEMA.required, ['intro', 'steps']);
+  assert.deepEqual(PLAN_SCHEMA.required, ['possible', 'intro', 'steps']);
+  assert.match(system.content, /possible to false, with no steps, only when the task is about another app or website/);
 });
 
 test('a plan starts on a control that is on screen; names are tidied and positions filled in', () => {
@@ -63,7 +64,18 @@ test('a plan starts on a control that is on screen; names are tidied and positio
   });
   assert.equal(checkPlan({ intro: 'x', steps: [{ target: 'Export', say: 'Click Export.' }] }, SCREEN), null, 'the first control must be on screen');
   assert.equal(checkPlan('not json', SCREEN), null);
+  assert.equal(checkPlan({ possible: false, intro: 'x', steps: [{ target: 'Filters', say: 'Click.' }] }, SCREEN), null, 'Gemma can decline');
+  assert.equal(checkPlan({ possible: true, intro: 'x', steps: [{ target: 'Filters button', say: 'Click.' }] }, SCREEN).steps[0].target, 'Filters');
   assert.equal(checkPlan({ intro: 'x', steps: [] }, SCREEN), null);
+});
+
+test('a question about another app or website is never planned on the app in front', () => {
+  const ide = { app: 'Antigravity IDE', title: 'main.js — goat' };
+  assert.equal(aboutAnotherApp('show me how to search in google', ide), true);
+  assert.equal(aboutAnotherApp('how do I sort a column in excel', ide), true);
+  assert.equal(aboutAnotherApp('show me how to search in google', { app: 'Microsoft Edge', title: 'Google', url: 'https://www.google.com/' }), false);
+  assert.equal(aboutAnotherApp('how do I log an issue in forma', { app: 'Microsoft Edge', title: 'Issues - Autodesk Build' }), false);
+  assert.equal(aboutAnotherApp('how do I open the .env file', ide), false);
 });
 
 describe('planned guides through /api/assist', () => {
@@ -108,6 +120,10 @@ describe('planned guides through /api/assist', () => {
       assert.ok(ollama.chats().every((c) => !c.body.format), 'no planning without controls');
       const recorded = await srv.request('POST', '/api/assist', { body: { question: 'how do I log an issue?', targets: SCREEN } });
       assert.equal(recorded.body.guide.id, 'forma-log-issue', 'a recorded guide still wins');
+      ollama.calls.length = 0;
+      const elsewhere = await srv.request('POST', '/api/assist', { body: { question: 'show me how to search in google', context: { app: 'Antigravity IDE' }, targets: SCREEN } });
+      assert.equal(elsewhere.body.source, 'llm');
+      assert.ok(ollama.chats().every((c) => !c.body.format), 'not planned on the IDE');
     } finally {
       await srv.close();
       await ollama.close();

@@ -11,6 +11,7 @@ const MAX_LISTED = 120;
 export const PLAN_SCHEMA = {
   type: 'object',
   properties: {
+    possible: { type: 'boolean' },
     intro: { type: 'string' },
     steps: {
       type: 'array',
@@ -21,13 +22,14 @@ export const PLAN_SCHEMA = {
       },
     },
   },
-  required: ['intro', 'steps'],
+  required: ['possible', 'intro', 'steps'],
 };
 
 export const PLAN_PROMPT = [
   "You are GOAT, Gamuda's AI assistant. You guide an engineer through the app on their screen by moving a blue cursor to each control in turn.",
   'Plan the clicks for what they ask, following the company procedure when one applies.',
-  'Reply in JSON: intro, one short sentence such as "Here\'s how to export the issue list."; steps, at most 6, in order, each with target and say.',
+  'Reply in JSON: possible; intro, one short sentence such as "Here\'s how to export the issue list."; steps, at most 6, in order, each with target and say.',
+  'Set possible to false, with no steps, only when the task is about another app or website, or makes no sense in this app. Otherwise set it to true and plan it with the controls on screen, never with an unrelated control.',
   'target is the exact label of the control to click or type into, copied from inside the quotes in the list of controls on screen when it is there, otherwise the label it will have once it appears.',
   'say is one short instruction for that step.',
   "The first step's target must be a control from the list.",
@@ -75,7 +77,7 @@ export function findTarget(targets, name) {
   return best ? best.target : null;
 }
 
-export function planMessages({ question, ctx = {}, procedures = '', doc = null, targets }) {
+export function planMessages({ question, ctx = {}, procedures = '', doc = null, targets, history = [] }) {
   const seen = new Set();
   const listed = [];
   for (const t of targets) {
@@ -91,6 +93,7 @@ export function planMessages({ question, ctx = {}, procedures = '', doc = null, 
     `Controls on screen now:\n${listed.join('\n')}`,
     procedures && `Company procedures:\n${procedures}`,
     doc && doc.text && `The ${doc.kind === 'deck' ? 'deck' : 'page'} open now:\n${doc.text.slice(0, 2500)}`,
+    history.length && `Earlier in this chat:\n${history.map((t) => `Q: ${t.question}\nA: ${t.answer}`).join('\n')}`,
     `Task: ${question}`,
   ]
     .filter(Boolean)
@@ -112,12 +115,14 @@ export function checkPlan(raw, targets) {
       return null;
     }
   }
+  if (!plan || plan.possible === false) return null;
   const text = (v, max) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) : '');
   // Gemma sometimes copies the quotes or the kind of control along with the label.
   const label = (v) =>
     ((/["“]([^"”]+)["”]/.exec(text(v, 120)) || [])[1] || text(v, 120))
       .replace(/^["“'‘]+|["”'’]+$/g, '')
       .replace(/\s*\((?![\d\s]+\))[^)]*\)$/, '') // "(link)", "(assumed)"; a count like "(12)" stays
+      .replace(/\s+(radio ?button|button|link|tab|field|text ?field|combo ?box|row|check ?box|menu ?item|option)$/i, '')
       .slice(0, 80);
   const steps = (Array.isArray(plan?.steps) ? plan.steps : [])
     .map((s) => ({ target: label(s?.target), say: text(s?.say, 200) }))
@@ -137,7 +142,32 @@ export function checkPlan(raw, targets) {
   };
 }
 
-export async function planGuide({ chat, question, ctx, procedures, doc, targets }) {
-  const r = await chat({ messages: planMessages({ question, ctx, procedures, doc, targets }), format: PLAN_SCHEMA, temperature: 0.2 });
+// A question about another app or website than the one in front ("search in Google" while the
+// IDE is in front) is never planned on this app's controls: GOAT answers in words instead.
+const APPS = [
+  ['google', /\bgoogle\b(?! (docs|sheets|slides|drive))/i, /google|chrome/i],
+  ['chrome', /\bchrome\b/i, /chrome/i],
+  ['edge', /\bedge\b/i, /edge/i],
+  ['safari', /\bsafari\b/i, /safari/i],
+  ['excel', /\bexcel\b/i, /excel/i],
+  ['word', /\bin word\b|\bmicrosoft word\b/i, /word/i],
+  ['powerpoint', /\bpower ?point\b/i, /powerpnt|powerpoint/i],
+  ['keynote', /\bkeynote\b/i, /keynote/i],
+  ['outlook', /\boutlook\b/i, /outlook/i],
+  ['teams', /\bteams\b/i, /teams/i],
+  ['revit', /\brevit\b/i, /revit/i],
+  ['autocad', /\bautocad\b/i, /autocad|acad/i],
+  ['bluebeam', /\bbluebeam\b/i, /bluebeam/i],
+  ['navisworks', /\bnavisworks\b/i, /navisworks/i],
+  ['forma', /\bforma\b|\bautodesk build\b/i, /forma|autodesk|acc\.autodesk/i],
+  ['finder', /\bfinder\b/i, /finder/i],
+];
+export function aboutAnotherApp(question, ctx = {}) {
+  const here = [ctx.app, ctx.title, ctx.url].filter(Boolean).join(' ');
+  return APPS.some(([, asked, open]) => asked.test(question) && !open.test(here));
+}
+
+export async function planGuide({ chat, question, ctx, procedures, doc, targets, history = [] }) {
+  const r = await chat({ messages: planMessages({ question, ctx, procedures, doc, targets, history }), format: PLAN_SCHEMA, temperature: 0.2 });
   return checkPlan(r?.text, targets);
 }

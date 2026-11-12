@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { HttpError } from './errors.js';
 import { matchGuide, RELATED_MIN, relatedGuides, wantsExplanation } from './guides/match.js';
-import { cleanTargets, HOW_TO, planGuide } from './guides/plan.js';
+import { aboutAnotherApp, cleanTargets, HOW_TO, planGuide } from './guides/plan.js';
 
 export const SYSTEM_PROMPT = [
   "You are GOAT, Gamuda's friendly AI assistant that helps engineers right on their screen.",
@@ -251,10 +251,11 @@ export function createAssist({ config, guides, docs, llm, mcp = null, chats = nu
     // A how-to question, no recorded guide, and the controls on screen: GOAT plans a guide from
     // the procedures and what's on screen. Without a plan that starts on a real control, it
     // answers in words as usual.
-    const controls = !picture && HOW_TO.test(q) ? cleanTargets(targets) : [];
+    const controls = !picture && HOW_TO.test(q) && !aboutAnotherApp(q, ctx) ? cleanTargets(targets) : [];
     if (controls.length) {
       step('Planning the steps');
-      const plan = await planGuide({ chat: ask, question: q, ctx, procedures: found.text, doc, targets: controls });
+      const history = chats ? chats.history(thread).slice(-2) : [];
+      const plan = await planGuide({ chat: ask, question: q, ctx, procedures: found.text, doc, targets: controls, history });
       if (plan) {
         step(`Found “${plan.steps[0].label}” on screen`);
         const id = `planned-${base.id.slice(0, 8)}`;
