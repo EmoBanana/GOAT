@@ -1,5 +1,5 @@
 // Your account, balance and chats (Ctrl+Option+A), and the sign-in card shown when GOAT starts
-// without an account. Both are small cards docked under the menu bar that leave the screen
+// without an account. Both are small cards docked at the bottom right that leave the screen
 // usable. Signing in happens in the browser (Reown AppKit); main waits for it.
 (function () {
   'use strict';
@@ -21,15 +21,15 @@
   }
 
   // ---------- welcome: sign in or continue offline ----------
-  // A small card under the menu bar, not a modal: the apps around it keep working.
+  // A small card at the bottom right, not a modal: the apps around it keep working.
+  const OUT_ARROW = '<svg viewBox="0 0 14 14" aria-hidden="true"><path d="M3.5 10.5 L10.5 3.5 M4.5 3.5 H10.5 V9.5" fill="none" stroke="currentColor" stroke-width="2.2"/></svg>';
   const WELCOME_HTML =
-    '<div class="card-head"><div class="card-title">Sign in to GOAT</div>' +
+    '<div class="card-head"><div class="card-title">Sign in to <mark>GOAT</mark></div>' +
     '<button type="button" class="x" data-action="dismiss" aria-label="Close">×</button></div>' +
-    '<p class="card-lead">Your balance, Pro and chats follow your account.</p>' +
+    '<p class="card-lead">Signing in opens your browser. Your balance, Pro and chats follow your account.</p>' +
     '<div class="welcome-actions">' +
-    '<button type="button" class="primary" data-action="create">Create account</button>' +
-    '<button type="button" data-action="connect">Connect wallet</button></div>' +
-    '<p class="welcome-wait" hidden>Finish in your browser. GOAT carries on when you’re done.</p>' +
+    `<button type="button" class="primary" data-action="create"><span>Create account</span>${OUT_ARROW}</button>` +
+    `<button type="button" data-action="connect"><span>Connect wallet</span>${OUT_ARROW}</button></div>` +
     '<div class="form-error" role="alert" hidden></div>' +
     '<div class="card-foot"><button type="button" class="link" data-action="offline">Continue offline</button></div>';
 
@@ -55,15 +55,15 @@
           button.disabled = false;
           return;
         }
-        // create | connect: the sign-in page opens in the browser
+        // create | connect: the sign-in page opens in the browser, and the card gets out of the
+        // way. Main waits for the account; signing in brings a toast and a greeting.
         const r = goat.signIn ? await goat.signIn(action) : { error: 'unavailable', message: 'Sign-in is not available.' };
         if (!r || r.error) {
           showError(p, (r && r.message) || "Couldn't start the sign-in.");
           return;
         }
-        p.querySelector('.welcome-wait').hidden = false;
-        p.querySelector('[data-action="create"]').textContent = action === 'create' ? 'Open sign-in again' : 'Create account';
-        p.querySelector('[data-action="connect"]').textContent = action === 'connect' ? 'Open sign-in again' : 'Connect wallet';
+        ui.closePanel();
+        ui.toast('Continue in your browser', { ms: 4000 });
         ui.emit('sign-in:started', { mode: action, url: r.url });
       },
     });
@@ -263,12 +263,10 @@
     update(msg);
     openAccountPanel();
   });
+  // The card closed when the browser opened, so an expired page is a toast unless it's back.
   ui.onEvent('sign-in-expired', () => {
-    const p = document.getElementById('goat-panel');
-    if (isOpen('welcome')) {
-      p.querySelector('.welcome-wait').hidden = true;
-      showError(p, 'The sign-in page expired. Start again.');
-    }
+    if (isOpen('welcome')) showError(document.getElementById('goat-panel'), 'The sign-in page expired. Start again.');
+    else ui.toast(`The sign-in page expired. Press ${ui.hotkey('account')} to start again.`, { ms: 8000 });
   });
 
   // On launch: no account yet means the welcome panel.

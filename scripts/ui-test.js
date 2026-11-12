@@ -795,7 +795,7 @@ const OLD_CHAT = {
   ],
 };
 
-await check('welcome: without an account GOAT asks you to sign in; the browser sign-in finishes it', async () => {
+await check('welcome: without an account GOAT asks you to sign in; the card closes once the browser takes over', async () => {
   await page.keyboard.press('Escape');
   await page.evaluate(() => (window.__calls.length = 0));
   await setReply('signIn', { ok: true, url: 'http://127.0.0.1:8402/account/?code=x&mode=create' });
@@ -804,9 +804,22 @@ await check('welcome: without an account GOAT asks you to sign in; the browser s
   assert.match(await page.locator('.panel-welcome').innerText(), /Sign in to GOAT[\s\S]*Create account[\s\S]*Connect wallet[\s\S]*Continue offline/);
   assert.doesNotMatch(await page.locator('.panel-welcome').innerText(), /Reown|AppKit/, 'no credits');
   await shot('ui-17-welcome');
+  // Create account opens the sign-in page in the browser, and the card gets out of the way.
   await page.click('[data-action="create"]');
-  await page.waitForSelector('.welcome-wait', { state: 'visible' });
+  await until(async () => (await ui()).panel === null, 'the card to close for the browser');
   assert.deepEqual((await calls('signIn'))[0].args, ['create']);
+  await until(() => page.evaluate(() => /Continue in your browser/.test(document.getElementById('goat-toasts').innerText)), 'the browser toast');
+  // So does Connect wallet; a sign-in page that expires meanwhile says how to start again.
+  await emit({ type: 'open-welcome', signedIn: false, account: null, userId: 'ivanw' });
+  await page.waitForSelector('.panel-welcome', { state: 'visible' });
+  await page.click('[data-action="connect"]');
+  await until(async () => (await ui()).panel === null, 'the card to close again');
+  assert.deepEqual((await calls('signIn'))[1].args, ['connect']);
+  await emit({ type: 'sign-in-expired' });
+  await until(() => page.evaluate(() => /sign-in page expired[\s\S]*Ctrl\+Option\+A/.test(document.getElementById('goat-toasts').innerText)), 'the expired toast');
+  // Continue offline happens in the card.
+  await emit({ type: 'open-welcome', signedIn: false, account: null, userId: 'ivanw' });
+  await page.waitForSelector('.panel-welcome', { state: 'visible' });
   await page.click('[data-action="offline"]');
   assert.equal((await calls('signInOffline')).length, 1);
   // Main reports the account once the browser sign-in (or offline) is done.
@@ -976,11 +989,27 @@ await check('panels move: drag one by an empty spot and it opens there next time
   await page.evaluate(() => localStorage.clear());
 });
 
-await check('account and sign-in are small cards at the top right that leave the screen usable', async () => {
+await check('account and sign-in are small cards at the bottom right, clear of the Dock, that leave the screen usable', async () => {
   await emit({ type: 'open-account', signedIn: true, account: ACCOUNT, userId: '0xabab' });
   await page.waitForSelector('.panel-account', { state: 'visible' });
+  await sleep(250); // let the open animation finish
   const box = await page.locator('#goat-panel').boundingBox();
-  assert.ok(box.x + box.width >= 1440 - 20 && box.y < 80 && box.width <= 340, JSON.stringify(box));
+  assert.ok(box.x + box.width >= 1440 - 24 && box.y + box.height >= 900 - 24 && box.width <= 340, JSON.stringify(box));
+  // Drawn like the download page: a 2px black rule, square corners and a hard shadow.
+  const look = await page.evaluate(() => {
+    const s = getComputedStyle(document.getElementById('goat-panel'));
+    return { border: `${s.borderTopWidth} ${s.borderTopStyle}`, radius: s.borderTopLeftRadius, shadow: s.boxShadow };
+  });
+  assert.deepEqual([look.border, look.radius], ['2px solid', '0px'], JSON.stringify(look));
+  assert.match(look.shadow, /6px 6px 0px/, look.shadow);
+  await shot('ui-18c-account-docked');
+  // The Dock draws above the overlay; main's insets lift the card clear of it.
+  await emit({ type: 'origin', x: 0, y: 0, insets: { top: 25, right: 0, bottom: 80, left: 0 } });
+  await until(async () => {
+    const b = await page.locator('#goat-panel').boundingBox();
+    return Math.abs(b.y + b.height - (900 - 80 - 20)) <= 1;
+  }, 'the card above the Dock');
+  await emit({ type: 'origin', x: 0, y: 0, insets: { top: 0, right: 0, bottom: 0, left: 0 } });
   assert.equal(await page.locator('#goat-backdrop').isHidden(), true, 'no backdrop');
   assert.equal((await ui()).panel.keyboard, false);
   await emit({ type: 'cursor', x: 300, y: 500 }); // away from the card, clicks reach the apps

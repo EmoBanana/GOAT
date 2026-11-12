@@ -447,9 +447,16 @@
     setTimeout(focus, 60); // Electron focuses the window late
   }
   // opts: { name, html, keyboard, focus, onclick, onsubmit, oninput, backdropCloses, onEscape, dock }
-  // dock: 'right' puts a small card under the menu bar on the right; without the keyboard it has
-  // no backdrop, so the apps around it keep working.
+  // dock: 'right' puts a small card at the bottom right, above the Dock; without the keyboard it
+  // has no backdrop, so the apps around it keep working.
   let panelEscape = null;
+  // The menu bar and the Dock draw above the overlay; main says how far they reach in.
+  function setInsets(insets) {
+    const at = insets || {};
+    for (const side of ['top', 'right', 'bottom', 'left']) {
+      document.documentElement.style.setProperty(`--safe-${side}`, `${Math.max(0, Math.round(Number(at[side]) || 0))}px`);
+    }
+  }
   function openPanel(opts = {}) {
     closePanel();
     const p = els.panel;
@@ -480,7 +487,7 @@
     p.onclick = null;
     p.onsubmit = null;
     p.oninput = null;
-    Object.assign(p.style, { left: '', top: '', right: '', transform: '' });
+    Object.assign(p.style, { left: '', top: '', right: '', bottom: '', transform: '' });
     els.backdrop.hidden = true;
     els.backdrop.onclick = null;
     panelEscape = null;
@@ -492,18 +499,20 @@
   // ---------- moving panels ----------
   // Drag a panel by any empty part of it; each panel opens where you last left it.
   const NO_DRAG = 'button, input, textarea, select, a, label, [contenteditable], .thread-turns, .acct-chats, .rec-steps, .ts-acts, .ts-table, .draft-result';
-  const spotKey = (name) => `goat.panel.${name}`;
+  // Docked cards moved from the top right to the bottom right; they keep their spots under a new
+  // key, so one dragged while they docked at the top doesn't hold them there.
+  const spotKey = (name, p) => (p && p.classList.contains('dock-right') ? `goat.dock.${name}` : `goat.panel.${name}`);
   function movePanel(p, x, y) {
     const w = p.offsetWidth || 320;
     const left = clamp(Math.round(x), 80 - w, window.innerWidth - 80); // a corner always stays reachable
     const top = clamp(Math.round(y), 32, window.innerHeight - 48); // never under the menu bar
-    Object.assign(p.style, { left: `${left}px`, top: `${top}px`, right: 'auto', transform: 'none' });
+    Object.assign(p.style, { left: `${left}px`, top: `${top}px`, right: 'auto', bottom: 'auto', transform: 'none' });
     p.classList.add('moved');
   }
   function placeSaved(p, name) {
     let spot = null;
     try {
-      spot = JSON.parse(localStorage.getItem(spotKey(name)) || 'null');
+      spot = JSON.parse(localStorage.getItem(spotKey(name, p)) || 'null');
     } catch {
       spot = null;
     }
@@ -532,7 +541,7 @@
     if (drag.moved) {
       const r = els.panel.getBoundingClientRect();
       try {
-        localStorage.setItem(spotKey(drag.name), JSON.stringify({ x: r.left, y: r.top }));
+        localStorage.setItem(spotKey(drag.name, els.panel), JSON.stringify({ x: r.left, y: r.top }));
       } catch {
         // the panel still moved; it just won't be remembered
       }
@@ -873,7 +882,10 @@
     goat.onEvent((message) => {
       if (!message || typeof message.type !== 'string') return;
       if (message.type === 'cursor') onCursor(message);
-      else if (message.type === 'origin') state.origin = { x: Number(message.x) || 0, y: Number(message.y) || 0 };
+      else if (message.type === 'origin') {
+        state.origin = { x: Number(message.x) || 0, y: Number(message.y) || 0 };
+        setInsets(message.insets);
+      }
       else if (message.type === 'open-ask') openAsk(message);
       else if (message.type === 'progress') addStep(message.step);
       else if (message.type === 'notice' && message.text) toast(String(message.text), { ms: 9000 });

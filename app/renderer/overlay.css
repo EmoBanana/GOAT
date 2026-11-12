@@ -137,9 +137,20 @@ body {
   user-select: text;
 }
 @keyframes goat-drop { from { opacity: 0; transform: translate(-50%, -6px); } to { opacity: 1; transform: translate(-50%, 0); } }
-/* Moved or docked panels drop the centring transform. */
+/* Moved or docked panels drop the centring transform. Docked cards sit at the bottom right, clear
+   of the Dock (main says how far it reaches in); their look is at the end of this file. */
 .panel.moved, .panel.dock-right { animation-name: goat-pop; }
-.panel.dock-right { left: auto; right: 16px; top: 40px; width: 320px; padding: 14px 16px 12px; transform: none; }
+.panel.dock-right {
+  left: auto;
+  top: auto;
+  right: calc(var(--safe-right, 0px) + 20px);
+  bottom: calc(var(--safe-bottom, 0px) + 20px);
+  width: 340px;
+  max-height: calc(100vh - var(--safe-top, 0px) - var(--safe-bottom, 0px) - 40px);
+  overflow: auto;
+  padding: 16px 18px 18px;
+  transform: none;
+}
 .panel.dragging { box-shadow: 0 2px 4px rgba(11, 18, 32, 0.08), 0 22px 50px rgba(11, 18, 32, 0.2), 0 0 0 1px var(--line); cursor: grabbing; user-select: none; }
 
 /* Cards: a title, an optional sub line, and a quiet close. */
@@ -179,8 +190,7 @@ body {
 .ask-context { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .ask-hint { flex: none; }
 
-/* Toasts, top right below the menu bar. */
-/* Top centre, so they never sit on the cards docked at the top right. */
+/* Toasts, top centre below the menu bar, away from the cards docked at the bottom right. */
 .toasts { position: fixed; top: 40px; left: 50%; z-index: 60; display: flex; flex-direction: column; align-items: center; gap: 6px; transform: translateX(-50%); }
 .toast {
   padding: 7px 12px;
@@ -429,10 +439,8 @@ body {
 .turn-q { color: var(--ink); font-size: 13px; font-weight: 600; }
 .turn-a { margin-top: 2px; color: var(--ink-2); font-size: 12.5px; line-height: 1.5; white-space: pre-wrap; }
 
-/* Sign-in card, docked under the menu bar. */
-.welcome-actions { display: grid; gap: 8px; }
-.panel .welcome-actions button { padding: 9px 12px; font-size: 13.5px; }
-.welcome-wait { margin: 10px 0 0; color: var(--ink-2); font-size: 12.5px; }
+/* Sign-in card: both ways in finish in the browser, so the card closes once it opens. */
+.welcome-actions { display: grid; gap: 12px; }
 
 /* Account card (Ctrl+Option+A): who you are, balance, chats. */
 .acct-who { min-width: 0; }
@@ -455,6 +463,75 @@ body {
 .acct-chats li:hover .acct-del, .panel button.acct-del:focus-visible { opacity: 1; }
 .panel button.acct-del:hover { background: rgba(220, 38, 38, 0.08); color: var(--red); }
 .acct-empty { margin: 6px 0 2px; color: var(--muted); font-size: 12.5px; }
+/* Docked cards (sign-in, account, wallet), drawn like the download page and the sign-in page:
+   white paper, 2px black rules, a hard offset shadow, square corners and widened headings. Blue is
+   the main action; signal yellow is the highlight and the money. */
+.panel.dock-right {
+  --nb-ink: #0a0a0a;
+  --nb-soft: #3b3b3b;
+  --nb-grey: #f1f2f4;
+  --nb-yellow: #ffd60a;
+  --nb-rule: 2px solid var(--nb-ink);
+  border: var(--nb-rule);
+  border-radius: 0;
+  color: var(--nb-ink);
+  box-shadow: 6px 6px 0 var(--nb-ink);
+}
+.panel.dock-right.dragging { box-shadow: 10px 10px 0 var(--nb-ink); }
+.panel.dock-right .card-head { align-items: center; margin-bottom: 8px; }
+.panel.dock-right .card-title { font-size: 19px; font-weight: 800; font-stretch: 125%; letter-spacing: -0.02em; line-height: 1.25; }
+.panel.dock-right .card-title mark { padding: 0 0.06em; background: var(--nb-yellow); color: inherit; }
+.panel.dock-right .card-sub { margin-top: 2px; color: var(--nb-soft); font: 500 11px/1.4 var(--mono); }
+.panel.dock-right .card-lead { margin-bottom: 14px; color: var(--nb-soft); font-size: 13px; }
+.panel.dock-right .card-label { color: var(--nb-ink); }
+.panel.dock-right .card-foot { margin-top: 14px; padding-top: 12px; border-top: var(--nb-rule); }
+.panel.dock-right button.x { width: 28px; height: 28px; margin: 0; border: var(--nb-rule); border-radius: 0; background: var(--paper); color: var(--nb-ink); font: 600 18px/24px var(--font); box-shadow: 2px 2px 0 var(--nb-ink); }
+.panel.dock-right button.x:hover { background: var(--nb-yellow); }
+/* Solid buttons sit on a hard shadow: they lift on hover and press flat. */
+.panel.dock-right :is(.welcome-actions, .acct-wallet, .acct-sheet, .form-actions) button {
+  border: var(--nb-rule);
+  border-radius: 0;
+  background: var(--paper);
+  color: var(--nb-ink);
+  font-weight: 700;
+  box-shadow: 3px 3px 0 var(--nb-ink);
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+.panel.dock-right :is(.welcome-actions, .acct-wallet, .acct-sheet, .form-actions) button:hover { background: var(--paper); transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--nb-ink); }
+.panel.dock-right :is(.welcome-actions, .acct-wallet, .acct-sheet, .form-actions) button:active { transform: translate(3px, 3px); box-shadow: 0 0 0 var(--nb-ink); }
+.panel.dock-right :is(.welcome-actions, .acct-wallet, .acct-sheet, .form-actions) button.primary,
+.panel.dock-right :is(.welcome-actions, .acct-wallet, .acct-sheet, .form-actions) button.primary:hover { background: var(--blue); color: #fff; }
+.panel.dock-right :is(.welcome-actions, .acct-wallet, .acct-sheet, .form-actions) button:disabled { opacity: 1; background: var(--nb-grey); color: #8a8f98; box-shadow: none; transform: none; }
+.panel.dock-right button:focus-visible { outline: 3px solid var(--blue); outline-offset: 3px; }
+.panel.dock-right button.link { color: var(--nb-ink); font-weight: 600; text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
+.panel.dock-right button.link:hover { color: var(--blue); text-decoration: underline; text-decoration-thickness: 2px; }
+.panel.dock-right button.link.quiet { color: var(--nb-soft); font-weight: 500; text-decoration-thickness: 1px; }
+.panel.dock-right .form-error { margin-top: 12px; padding: 8px 10px; border: var(--nb-rule); background: #ffe1e1; color: var(--nb-ink); font: 500 11.5px/1.45 var(--mono); }
+/* Sign-in: two wide buttons, each with an arrow out to the browser. */
+.panel.dock-right .welcome-actions button { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 44px; padding: 10px 14px; font-size: 14px; text-align: left; }
+.panel.dock-right .welcome-actions svg { flex: none; width: 13px; height: 13px; transition: transform 0.1s ease; }
+.panel.dock-right .welcome-actions button:hover svg { transform: translate(2px, -2px); }
+/* Account: the balance on signal yellow, today's timesheet in a ruled box to match, then chats. */
+.panel.dock-right :is(.acct-wallet, .acct-sheet) { border: var(--nb-rule); border-radius: 0; background: var(--paper); }
+.panel.dock-right .acct-wallet { background: var(--nb-yellow); }
+.panel.dock-right .acct-balance { font-size: 20px; font-weight: 800; font-stretch: 125%; }
+.panel.dock-right :is(.acct-pro, .acct-sheet-sub) { color: var(--nb-soft); font: 500 11px/1.4 var(--mono); }
+.panel.dock-right .acct-pro { color: var(--nb-ink); }
+.panel.dock-right .acct-sheet-title { font-weight: 700; }
+.panel.dock-right .acct-chats li { border-radius: 0; }
+.panel.dock-right .acct-chats li:hover { background: var(--nb-grey); }
+.panel.dock-right .acct-chats li.current { box-shadow: inset 3px 0 0 var(--blue); }
+.panel.dock-right .acct-chat-meta { color: var(--nb-soft); }
+.panel.dock-right button.acct-del { border-radius: 0; }
+/* Wallet: the balance as a price tag, Pro in a ruled box. */
+.panel.dock-right .wallet-balance { display: inline-block; margin-top: 6px; padding: 5px 12px 6px; border: var(--nb-rule); background: var(--nb-yellow); font-size: 28px; font-weight: 800; font-stretch: 125%; line-height: 1.1; }
+.panel.dock-right .wallet-sub { margin-top: 8px; color: var(--nb-soft); font: 500 11.5px/1.4 var(--mono); }
+.panel.dock-right .wallet-pro { margin-top: 14px; border: var(--nb-rule); border-radius: 0; background: var(--nb-grey); color: var(--nb-ink); }
+.panel.dock-right .form-actions { margin-top: 16px; }
+@media (prefers-reduced-motion: reduce) {
+  .panel.dock-right button,
+  .panel.dock-right .welcome-actions svg { transition: none; }
+}
 /* Today's timesheet from the account card, tracking or not. */
 .acct-sheet { display: flex; align-items: center; gap: 10px; margin: -6px 0 14px; padding: 10px 12px; border-radius: 10px; background: var(--tint); }
 .acct-sheet .spacer { flex: 1; }
