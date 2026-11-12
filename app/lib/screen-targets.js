@@ -5,9 +5,13 @@ import { documentKind } from './doc-context.js';
 // screen points, read live from the app in front. Guides point at a control by name and find it
 // again right before each step, so resolution, window size and scrolling never move the cursor
 // off target. Browsers: the page lists its own clickable elements (JavaScript from Apple Events,
-// the same switch as whole-page reading); other apps: macOS Accessibility (AXUIElement).
+// the same switch as whole-page reading), and the browser's own toolbar (address bar, back, new
+// tab) comes from macOS Accessibility; other apps: Accessibility (AXUIElement) alone.
 // Read only while asking or guiding, never stored.
 export const MAX_TARGETS = 300;
+// A browser's own controls carry this in front of their role ("toolbar textfield"), so the
+// planner can tell the address bar from a search box on the page.
+export const TOOLBAR = 'toolbar ';
 const ROLES = /^(AXButton|AXLink|AXMenuItem|AXMenuButton|AXPopUpButton|AXRadioButton|AXCheckBox|AXTab|AXTextField|AXTextArea|AXComboBox|AXDisclosureTriangle|AXCell)$/;
 
 // Runs in the page: clickable elements, CSS pixels turned into screen points (zoom, window
@@ -18,34 +22,68 @@ const PAGE_SETUP = `
   var left = window.screenX + (window.outerWidth - window.innerWidth * zoom) / 2;
   var SEL = 'a[href], button, input:not([type=hidden]), select, textarea, summary, [role=button], [role=link], [role=tab], [role=menuitem], [role=option], [role=checkbox], [role=switch], [role=combobox], [onclick], [tabindex]:not([tabindex="-1"])';
   function labelOf(el) {
-    var by = (el.getAttribute('aria-labelledby') || '').split(/\\s+/).map(function (id) { var t = id && document.getElementById(id); return t ? t.innerText : ''; }).join(' ');
+    var root = el.getRootNode ? el.getRootNode() : document;
+    var by = (el.getAttribute('aria-labelledby') || '').split(/\\s+/).map(function (id) { var t = id && root.getElementById ? root.getElementById(id) : null; return t ? t.innerText : ''; }).join(' ');
     var aria = el.getAttribute('aria-label') || by;
     var field = /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName);
     var own = field ? ((el.labels && el.labels[0] && el.labels[0].innerText) || el.getAttribute('placeholder') || el.getAttribute('name') || '') : (el.innerText || el.value || '');
     return String(aria || own || el.getAttribute('title') || el.getAttribute('alt') || '').replace(/\\s+/g, ' ').trim().slice(0, 80);
   }
   function roleOf(el) { return el.getAttribute('role') || (el.tagName === 'A' ? 'link' : el.tagName === 'INPUT' ? 'field' : el.tagName.toLowerCase()); }
+  // Every control in the page: the document, the open shadow roots inside it (web components keep
+  // their buttons there: Edge's New Tab page has all 16 of its controls in them and none outside)
+  // and same-origin frames. dx, dy: where that frame sits in the top window.
+  function everyControl(visit) {
+    (function into(root, dx, dy, depth) {
+      var found = root.querySelectorAll(SEL);
+      for (var i = 0; i < found.length; i++) visit(found[i], dx, dy);
+      if (depth >= 8) return;
+      var all = root.querySelectorAll('*');
+      for (var j = 0; j < all.length; j++) {
+        var el = all[j];
+        if (el.shadowRoot) into(el.shadowRoot, dx, dy, depth + 1);
+        else if (el.tagName === 'IFRAME' || el.tagName === 'FRAME') {
+          var doc = null;
+          try { doc = el.contentDocument; } catch (e) {}
+          if (doc && doc.documentElement) { var fr = el.getBoundingClientRect(); into(doc, dx + fr.left + el.clientLeft, dy + fr.top + el.clientTop, depth + 1); }
+        }
+      }
+    })(document, 0, 0, 0);
+  }
 `;
 export const PAGE_TARGETS_JS = `(function () {${PAGE_SETUP}
   var out = [], seen = {};
-  var all = document.querySelectorAll(SEL);
-  for (var i = 0; i < all.length && out.length < ${MAX_TARGETS}; i++) {
-    var el = all[i], r = el.getBoundingClientRect();
-    if (r.width < 4 || r.height < 4 || r.bottom < 0 || r.right < 0 || r.top > innerHeight || r.left > innerWidth) continue;
-    var st = getComputedStyle(el);
-    if (st.visibility === 'hidden' || st.display === 'none' || Number(st.opacity) === 0) continue;
+  everyControl(function (el, dx, dy) {
+    if (out.length >= ${MAX_TARGETS}) return;
+    var r = el.getBoundingClientRect(), x = r.left + dx, y = r.top + dy;
+    if (r.width < 4 || r.height < 4 || y + r.height < 0 || x + r.width < 0 || y > innerHeight || x > innerWidth) return;
+    var st = (el.ownerDocument.defaultView || window).getComputedStyle(el);
+    if (st.visibility === 'hidden' || st.display === 'none' || Number(st.opacity) === 0) return;
     var label = labelOf(el);
-    if (!label) continue;
-    var t = { role: roleOf(el), label: label, x: Math.round(left + r.left * zoom), y: Math.round(top + r.top * zoom), w: Math.round(r.width * zoom), h: Math.round(r.height * zoom) };
+    if (!label) return;
+    var t = { role: roleOf(el), label: label, x: Math.round(left + x * zoom), y: Math.round(top + y * zoom), w: Math.round(r.width * zoom), h: Math.round(r.height * zoom) };
     var key = t.label + '@' + t.x + ',' + t.y;
     if (!seen[key]) { seen[key] = 1; out.push(t); }
-  }
-  return JSON.stringify({ source: 'page', elements: out });
+  });
+  return JSON.stringify({ source: 'page', top: Math.round(top), elements: out });
 })()`;
-const pageAtJs = (x, y) => `(function () {${PAGE_SETUP}
-  var el = document.elementFromPoint((${Number(x)} - left) / zoom, (${Number(y)} - top) / zoom);
-  el = el && el.closest(SEL);
-  return JSON.stringify(el ? { role: roleOf(el), label: labelOf(el) } : {});
+// The control under a screen point: down through shadow roots and same-origin frames to the
+// element there, then up (across shadow boundaries) to the nearest control.
+export const pageAtJs = (x, y) => `(function () {${PAGE_SETUP}
+  var px = (${Number(x)} - left) / zoom, py = (${Number(y)} - top) / zoom;
+  var el = document.elementFromPoint(px, py);
+  for (var guard = 0; el && guard < 12; guard++) {
+    var inner = null;
+    if (el.shadowRoot) inner = el.shadowRoot.elementFromPoint(px, py);
+    else if (el.tagName === 'IFRAME' || el.tagName === 'FRAME') {
+      try { var doc = el.contentDocument; if (doc) { var fr = el.getBoundingClientRect(); px -= fr.left + el.clientLeft; py -= fr.top + el.clientTop; inner = doc.elementFromPoint(px, py); } } catch (e) {}
+    }
+    if (!inner || inner === el) break;
+    el = inner;
+  }
+  var hit = null;
+  for (var n = el; n && !hit; n = n.parentNode || n.host) if (n.nodeType === 1 && n.matches && n.matches(SEL)) hit = n;
+  return JSON.stringify(hit ? { role: roleOf(hit), label: labelOf(hit) } : {});
 })()`;
 
 const CHROMIUM_RUN = (js) => `function run(argv) {
@@ -78,13 +116,26 @@ function pair(v, a, b) {
   var m = new RegExp(a + ':(-?[\\\\d.]+) ' + b + ':(-?[\\\\d.]+)').exec(String(ObjC.unwrap($.CFCopyDescription(v))));
   return m ? [Number(m[1]), Number(m[2])] : null;
 }
-function labelOf(el, role) {
-  return (str(get(el, 'AXTitle')) || str(get(el, 'AXDescription')) || (/Text|Combo/.test(role) ? str(get(el, 'AXPlaceholderValue')) : '') || str(get(el, 'AXHelp'))).replace(/\\s+/g, ' ').trim().slice(0, 80);
+// named: only a real name counts, not the help text (a browser's toolbar has buttons whose only
+// text is a sentence of help).
+function labelOf(el, role, named) {
+  return (str(get(el, 'AXTitle')) || str(get(el, 'AXDescription')) || (/Text|Combo/.test(role) ? str(get(el, 'AXPlaceholderValue')) : '') || (named ? '' : str(get(el, 'AXHelp')))).replace(/\\s+/g, ' ').trim().slice(0, 80);
 }
-function appFor(pid) {
+// manual: Electron apps build their tree once AXManualAccessibility is set; a browser is left as it is.
+function appFor(pid, manual) {
   var app = $.AXUIElementCreateApplication(pid);
-  $.AXUIElementSetAttributeValue(app, $('AXManualAccessibility'), $.NSNumber.numberWithBool(true));
+  if (manual) $.AXUIElementSetAttributeValue(app, $('AXManualAccessibility'), $.NSNumber.numberWithBool(true));
   return app;
+}
+// The running app with this name (when its pid isn't known).
+function pidOf(name) {
+  ObjC.import('AppKit');
+  var apps = $.NSWorkspace.sharedWorkspace.runningApplications;
+  for (var i = 0; i < apps.count; i++) {
+    var a = apps.objectAtIndex(i);
+    if (ObjC.unwrap(a.localizedName) === name && Number(a.activationPolicy) === 0) return Number(a.processIdentifier);
+  }
+  return 0;
 }
 // The app's front window. For an app that isn't active, AXFocusedWindow and AXMainWindow can
 // hand back the application itself, so the first element whose role really is AXWindow wins.
@@ -95,9 +146,15 @@ function windowOf(app) {
   for (var j = 0; j < list.length; j++) if (list[j] && str(get(list[j], 'AXRole')) === 'AXWindow') return list[j];
   return null;
 }`;
+// argv: pid, then for a browser's own toolbar 'toolbar' and the browser's name (used when the pid
+// isn't known). The toolbar read leaves out the page (the page lists its own controls), the tabs
+// (their names are the user's open pages) and the bookmarks.
 const AX_TARGETS = `${AX_SETUP}
 function run(argv) {
-  var app = appFor(Number(argv[0]));
+  var bar = argv[1] === 'toolbar';
+  var pid = Number(argv[0]) || (argv[2] ? pidOf(argv[2]) : 0);
+  if (!pid) return JSON.stringify({ error: 'no_window' });
+  var app = appFor(pid, !bar);
   var win = windowOf(app);
   if (!win) return JSON.stringify({ error: 'no_window' });
   var out = [], visited = 0;
@@ -105,8 +162,12 @@ function run(argv) {
     if (!el || depth > 40 || visited > 5000 || out.length >= ${MAX_TARGETS}) return;
     visited++;
     var role = str(get(el, 'AXRole'));
-    if (${ROLES}.test(role)) {
-      var label = labelOf(el, role);
+    if (bar) {
+      if (role === 'AXWebArea') return;
+      if (/Group|Toolbar|List|Outline/.test(role) && /bookmark|favou?rite/i.test(str(get(el, 'AXTitle')) + ' ' + str(get(el, 'AXDescription')))) return;
+    }
+    if (${ROLES}.test(role) && !(bar && /^AX(RadioButton|Tab)$/.test(role))) {
+      var label = labelOf(el, role, bar);
       if (label) {
         var p = pair(get(el, 'AXPosition'), 'x', 'y'), s = pair(get(el, 'AXSize'), 'w', 'h');
         if (p && s && s[0] >= 4 && s[1] >= 4) out.push({ role: role.slice(2).toLowerCase(), label: label, x: Math.round(p[0]), y: Math.round(p[1]), w: Math.round(s[0]), h: Math.round(s[1]) });
@@ -120,7 +181,9 @@ function run(argv) {
 }`;
 const AX_AT = `${AX_SETUP}
 function run(argv) {
-  var app = appFor(Number(argv[0]));
+  var pid = Number(argv[0]) || (argv[3] ? pidOf(argv[3]) : 0);
+  if (!pid) return '{}';
+  var app = appFor(pid, !argv[3]);
   var r = Ref();
   if ($.AXUIElementCopyElementAtPosition(app, Number(argv[1]), Number(argv[2]), r) !== 0) return '{}';
   var el = r[0];
@@ -194,7 +257,21 @@ function fakeTargets(env) {
   }
 }
 
-// { source, elements } | { error } | null. pid: the app's process (for Accessibility).
+// One read: { source, top?, elements } | { error }.
+async function readWith(run, script, args, timeoutMs) {
+  let raw;
+  try {
+    raw = JSON.parse(await run(script, args, timeoutMs));
+  } catch (err) {
+    return { error: /not authori[sz]ed|-1743/i.test(String(err?.message)) ? 'not_allowed' : 'unavailable' };
+  }
+  if (!raw || raw.error) return { error: raw?.error || 'unavailable' };
+  return { source: raw.source, top: Number.isFinite(Number(raw.top)) ? Number(raw.top) : null, elements: cleanTargets(raw.elements) };
+}
+
+// { source, elements, pageError? } | { error } | null. pid: the app's process (for Accessibility).
+// A browser gives its page's controls and then its own toolbar's (role "toolbar …"); when the
+// page can't be read, the toolbar alone comes back with pageError saying why.
 // GOAT_FAKE_TARGETS (JSON { elements }) stands in for the screen in tests, and nothing real is
 // read while GOAT_FAKE_WINDOW fakes the front window.
 export async function readTargets({ app, pid, env = process.env, run = runJxa, timeoutMs = 5000 } = {}) {
@@ -203,17 +280,20 @@ export async function readTargets({ app, pid, env = process.env, run = runJxa, t
     return fake ? { source: 'fake', elements: cleanTargets(fake.elements) } : null;
   }
   if (env.GOAT_FAKE_WINDOW || !app) return null;
-  const browser = documentKind(app) === 'page';
-  if (!browser && !(pid > 0)) return null;
-  let raw;
-  try {
-    const script = browser ? (app === 'Safari' ? SAFARI_RUN(PAGE_TARGETS_JS) : CHROMIUM_RUN(PAGE_TARGETS_JS)) : AX_TARGETS;
-    raw = JSON.parse(await run(script, browser ? (app === 'Safari' ? [] : [app]) : [pid], timeoutMs));
-  } catch (err) {
-    return { error: /not authori[sz]ed|-1743/i.test(String(err?.message)) ? 'not_allowed' : 'unavailable' };
+  if (documentKind(app) !== 'page') {
+    if (!(pid > 0)) return null;
+    const read = await readWith(run, AX_TARGETS, [pid], timeoutMs);
+    return read.error ? read : { source: read.source, elements: read.elements };
   }
-  if (!raw || raw.error) return { error: raw?.error || 'unavailable' };
-  return { source: raw.source, elements: cleanTargets(raw.elements) };
+  const [page, bar] = await Promise.all([
+    readWith(run, app === 'Safari' ? SAFARI_RUN(PAGE_TARGETS_JS) : CHROMIUM_RUN(PAGE_TARGETS_JS), app === 'Safari' ? [] : [app], timeoutMs),
+    readWith(run, AX_TARGETS, [pid > 0 ? pid : 0, 'toolbar', app], Math.min(timeoutMs, 2500)),
+  ]);
+  // The toolbar is what sits above the page; anything lower is the page's own (when the browser
+  // also exposes the page to Accessibility, the page has listed it already).
+  const toolbar = (bar.elements || []).filter((t) => page.top == null || t.y + t.h / 2 < page.top).map((t) => ({ ...t, role: `${TOOLBAR}${t.role}`.slice(0, 20) }));
+  if (page.error) return toolbar.length ? { source: 'ax', elements: toolbar, pageError: page.error } : { error: page.error };
+  return { source: 'page', elements: [...page.elements.slice(0, MAX_TARGETS - toolbar.length), ...toolbar] };
 }
 
 // The control under a screen point, for the recorder: { role, label } or null.
@@ -225,11 +305,15 @@ export async function targetAt({ app, pid, x, y, env = process.env, run = runJxa
   if (env.GOAT_FAKE_WINDOW || !app) return null;
   const browser = documentKind(app) === 'page';
   if (!browser && !(pid > 0)) return null;
-  try {
-    const script = browser ? (app === 'Safari' ? SAFARI_RUN(pageAtJs(x, y)) : CHROMIUM_RUN(pageAtJs(x, y))) : AX_AT;
-    const raw = JSON.parse(await run(script, browser ? (app === 'Safari' ? [] : [app]) : [pid, x, y], timeoutMs));
-    return raw && typeof raw.label === 'string' && raw.label ? { role: String(raw.role || '').slice(0, 20), label: raw.label.slice(0, 80) } : null;
-  } catch {
-    return null;
-  }
+  const named = (raw, prefix = '') => (raw && typeof raw.label === 'string' && raw.label ? { role: `${prefix}${String(raw.role || '')}`.slice(0, 20), label: raw.label.slice(0, 80) } : null);
+  const ask = async (script, args) => {
+    try {
+      return JSON.parse(await run(script, args, timeoutMs));
+    } catch {
+      return null;
+    }
+  };
+  if (!browser) return named(await ask(AX_AT, [pid, x, y]));
+  // In a browser: the page's control there, else (above the page) the browser's own.
+  return named(await ask(app === 'Safari' ? SAFARI_RUN(pageAtJs(x, y)) : CHROMIUM_RUN(pageAtJs(x, y)), app === 'Safari' ? [] : [app])) || named(await ask(AX_AT, [pid > 0 ? pid : 0, x, y, app]), TOOLBAR);
 }

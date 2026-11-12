@@ -51,6 +51,8 @@ test('GOAT opens the app or website a show-me question names, unless it is alrea
   assert.equal(open('show me how to add an event in google calendar'), 'Google Calendar');
   assert.equal(open('show me how to clear the cache in google chrome'), 'Google Chrome');
   assert.equal(open('show me where the edge of the slab is'), null, '"edge" alone is not the browser');
+  assert.equal(open('show me how to perform search on Edge'), 'Microsoft Edge');
+  assert.equal(open('show me how to perform search on Edge', edge('New tab - Microsoft Edge')), null, 'already in front: guided where it is');
   assert.equal(open('show me how to freeze the top row in excel'), 'Excel');
   assert.equal(placeToOpen('show me how to freeze the top row in excel', ide).app, 'Microsoft Excel');
   assert.equal(open('show me how to freeze the top row in excel', { app: 'Microsoft Excel', title: 'Schedule.xlsx' }), null);

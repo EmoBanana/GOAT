@@ -47,6 +47,30 @@ test('the planner sees the controls (quoted, once each), the procedures, the pag
   assert.match(system.content, /possible to false, with no steps, only when the task is about another app or website/);
 });
 
+test("in a browser the planner gets the page's controls and the browser's own toolbar as two lists", () => {
+  const targets = [
+    T('Search', 'combobox', 559, 526, 448, 50),
+    T('Google Search', 'button', 713, 607, 128, 36),
+    T('Back', 'toolbar button', 0, 78, 36, 32),
+    T('Address and search bar', 'toolbar textfield', 104, 82, 1306, 24),
+    T('New Tab', 'toolbar button', 1634, 34, 32, 41),
+  ];
+  const [system, user] = planMessages({ question: 'show me how to search on Edge', ctx: { app: 'Microsoft Edge', title: 'New tab' }, targets });
+  assert.match(user.content, /Controls on screen now:\n- "Search" combobox\n- "Google Search" button\n\nThe browser's own toolbar:\n- "Back" button\n- "Address and search bar" textfield\n- "New Tab" button\n\nTask: show me/);
+  assert.match(system.content, /a second list, the browser's own toolbar/);
+  // A long page can't push the address bar off the end of the list.
+  const long = [...Array.from({ length: 200 }, (_, i) => T(`Row ${i}`, 'link', 10, 200 + i, 80, 20)), targets[3]];
+  const listed = planMessages({ question: 'q', targets: long })[1].content;
+  assert.ok(!listed.includes('"Row 150"') && listed.includes('- "Address and search bar" textfield'));
+  // Only the toolbar could be read: no empty list of page controls.
+  assert.doesNotMatch(planMessages({ question: 'q', targets: targets.slice(2) })[1].content, /Controls on screen now/);
+  // A plan can start on the toolbar. "New Tab" is on screen as written, so it keeps its last word;
+  // "Google Search button" is the label plus its kind.
+  const plan = checkPlan({ possible: true, intro: 'x', steps: [{ target: 'Address and search bar', say: 'Click the address bar.' }, { target: 'New Tab', say: 'Open a tab.' }, { target: 'Google Search button', say: 'Search.' }] }, targets);
+  assert.deepEqual(plan.steps.map((s) => s.target), ['Address and search bar', 'New Tab', 'Google Search']);
+  assert.deepEqual([plan.steps[0].x, plan.steps[0].y], [757, 94]);
+});
+
 test('a plan starts on a control that is on screen; names are tidied and positions filled in', () => {
   const plan = checkPlan(
     JSON.stringify({

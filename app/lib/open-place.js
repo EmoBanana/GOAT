@@ -36,7 +36,7 @@ export const PLACES = [
   { name: 'GitHub', asked: /\bgithub\b/i, url: 'https://github.com/', here: site(/\/\/github\.com/i, /github/i) },
   { name: 'Canva', asked: /\bcanva\b/i, url: 'https://www.canva.com/', here: site(/\/\/(www\.)?canva\.com/i, /canva/i) },
   { name: 'Google Chrome', asked: /\b(?:google )?chrome\b/i, app: 'Google Chrome', here: app(/^google chrome$/i) },
-  { name: 'Microsoft Edge', asked: /\bmicrosoft edge\b|\bin edge\b|\bedge browser\b/i, app: 'Microsoft Edge', here: app(/^microsoft edge$/i) },
+  { name: 'Microsoft Edge', asked: /\bmicrosoft edge\b|\b(?:in|on) edge\b|\bedge browser\b/i, app: 'Microsoft Edge', here: app(/^microsoft edge$/i) },
   { name: 'Safari', asked: /\bsafari\b/i, app: 'Safari', here: app(/^safari$/i) },
   {
     name: 'Google',

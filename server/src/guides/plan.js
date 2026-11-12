@@ -38,7 +38,12 @@ export const PLAN_PROMPT = [
   'target is the exact label of the control to click or type into, copied from inside the quotes in the list of controls on screen when it is there, otherwise the label it will have once it appears.',
   'say is one short instruction for that step.',
   "The first step's target must be a control from the list.",
+  "In a browser there can be a second list, the browser's own toolbar (address bar, back, new tab): it counts too. Use it for tasks about the browser itself, and the controls on screen for tasks on the page.",
 ].join(' ');
+
+// The app marks a browser's own controls with this in front of their role (app/lib/screen-targets.js).
+const TOOLBAR = 'toolbar ';
+const MAX_TOOLBAR = 30;
 
 const num = (v) => (Number.isFinite(Number(v)) ? Math.round(Number(v)) : null);
 
@@ -83,19 +88,24 @@ export function findTarget(targets, name) {
 }
 
 export function planMessages({ question, ctx = {}, procedures = '', doc = null, targets, history = [] }) {
-  const seen = new Set();
-  const listed = [];
+  // Each control once per list; the page's controls and the browser's own toolbar apart, so a
+  // long page can't push the address bar off the end.
+  const lists = { page: [], bar: [] };
+  const seen = { page: new Set(), bar: new Set() };
   for (const t of targets) {
+    const own = String(t.role || '').startsWith(TOOLBAR);
+    const which = own ? 'bar' : 'page';
     const key = t.label.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    listed.push(`- "${t.label}"${t.role ? ` ${t.role}` : ''}`);
-    if (listed.length >= MAX_LISTED) break;
+    if (seen[which].has(key) || lists[which].length >= (own ? MAX_TOOLBAR : MAX_LISTED)) continue;
+    seen[which].add(key);
+    const role = own ? t.role.slice(TOOLBAR.length) : t.role;
+    lists[which].push(`- "${t.label}"${role ? ` ${role}` : ''}`);
   }
   const where = [ctx.app && `App: ${ctx.app}`, ctx.title && `Window: ${ctx.title}`].filter(Boolean).join(' · ');
   const user = [
     where,
-    `Controls on screen now:\n${listed.join('\n')}`,
+    lists.page.length && `Controls on screen now:\n${lists.page.join('\n')}`,
+    lists.bar.length && `The browser's own toolbar:\n${lists.bar.join('\n')}`,
     procedures && `Company procedures:\n${procedures}`,
     doc && doc.text && `The ${doc.kind === 'deck' ? 'deck' : 'page'} open now:\n${doc.text.slice(0, 2500)}`,
     history.length && `Earlier in this chat:\n${history.map((t) => `Q: ${t.question}\nA: ${t.answer}`).join('\n')}`,
@@ -122,13 +132,17 @@ export function checkPlan(raw, targets) {
   }
   if (!plan || plan.possible === false) return null;
   const text = (v, max) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) : '');
-  // Gemma sometimes copies the quotes or the kind of control along with the label.
-  const label = (v) =>
-    ((/["“]([^"”]+)["”]/.exec(text(v, 120)) || [])[1] || text(v, 120))
+  // Gemma sometimes copies the quotes or the kind of control along with the label. A label that is
+  // on screen as written keeps its last word: "New Tab" is a button's name, not "New" plus its kind.
+  const onScreen = new Set((targets || []).map((t) => t.label.toLowerCase()));
+  const label = (v) => {
+    const named = ((/["“]([^"”]+)["”]/.exec(text(v, 120)) || [])[1] || text(v, 120))
       .replace(/^["“'‘]+|["”'’]+$/g, '')
       .replace(/\s*\((?![\d\s]+\))[^)]*\)$/, '') // "(link)", "(assumed)"; a count like "(12)" stays
-      .replace(/\s+(radio ?button|button|link|tab|field|text ?field|combo ?box|row|check ?box|menu ?item|option)$/i, '')
       .slice(0, 80);
+    if (onScreen.has(named.toLowerCase())) return named;
+    return named.replace(/\s+(radio ?button|button|link|tab|field|text ?field|combo ?box|row|check ?box|menu ?item|option)$/i, '');
+  };
   const steps = (Array.isArray(plan?.steps) ? plan.steps : [])
     .map((s) => ({ target: label(s?.target), say: text(s?.say, 200) }))
     .filter((s) => s.say)

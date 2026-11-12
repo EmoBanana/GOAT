@@ -361,24 +361,26 @@ async function readFrontDocument({ quiet = false } = {}) {
 // them along so GOAT can plan a guide; during a guide, each step's control is found again live.
 // (HOW_TO, the how-to questions, lives in lib/open-place.js; the server has the same pattern.)
 let guideApp = { app: '', pid: 0 };
-// Resolves to { targets, why }: the controls, or null and why there are none. A show-me question
-// wants the cursor, so when the controls can't be read it says so every time (what to switch on,
-// when GOAT knows); other how-to questions get the hint once.
+// Resolves to { targets, why }: the controls, or null and why there are none (in a browser, the
+// toolbar alone and why the page gave none). A show-me question wants the cursor, so when
+// controls can't be read it says so every time (what to switch on, when GOAT knows); other how-to
+// questions get the hint once.
 async function readFrontTargets({ showMe = false } = {}) {
   guideApp = { app: askContext.app || '', pid: askPid };
   send({ type: 'progress', step: 'Looking at the controls on screen' });
   const read = await readTargets(guideApp);
-  if (read?.elements?.length) return { targets: read.elements, why: '' };
-  const why = !guideApp.app ? 'no app in front' : read?.error || (read ? 'none found' : 'not readable');
-  const hint = read?.error ? documentHint({ kind: 'page', app: guideApp.app, error: read.error }, { purpose: 'point' }) : '';
-  const key = `${guideApp.app}:${read?.error}:point`;
+  const targets = read?.elements?.length ? read.elements : null;
+  const failed = read?.error || read?.pageError || '';
+  const why = targets ? (failed ? `the page gave none: ${failed}` : '') : !guideApp.app ? 'no app in front' : failed || (read ? 'none found' : 'not readable');
+  const hint = failed ? documentHint({ kind: 'page', app: guideApp.app, error: failed }, { purpose: 'point' }) : '';
+  const key = `${guideApp.app}:${failed}:point`;
   if (hint && (showMe || !docHints.has(key))) {
     docHints.add(key);
     send({ type: 'notice', text: hint });
-  } else if (showMe) {
+  } else if (showMe && !targets) {
     send({ type: 'notice', text: guideApp.app ? `GOAT can't see the buttons in ${guideApp.app} right now, so it answered in words.` : "GOAT couldn't tell which app is in front, so it answered in words." });
   }
-  return { targets: null, why };
+  return { targets, why };
 }
 
 // "Show me … on Google / in Excel" with something else in front: GOAT opens it first (a website in
@@ -610,7 +612,7 @@ function registerIpc() {
     // A how-to question also takes the controls on screen, so GOAT can plan a guide around them.
     const [document, controls] = await Promise.all([readFrontDocument({ quiet: showMe }), howTo && !region ? readFrontTargets({ showMe }) : null]);
     const targets = controls?.targets || null;
-    if (howTo && !region) trail.push(targets ? `${targets.length} controls` : `no controls (${controls?.why})`);
+    if (howTo && !region) trail.push(targets ? `${targets.length} controls${controls.why ? ` (${controls.why})` : ''}` : `no controls (${controls?.why})`);
     if (document) trail.push(`${document.kind} read`);
     // The server's steps ("Checking the guides"…) go to the readout while the answer comes.
     const progressId = globalThis.crypto.randomUUID();
