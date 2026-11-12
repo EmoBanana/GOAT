@@ -20,7 +20,8 @@ const GUIDE_REPLY = { id: 'r1', source: 'guide', say: 'Three quick steps.', mode
 const LLM_REPLY = { id: 'r2', source: 'llm', say: 'Photos are the evidence for every issue.', model: 'gemma4:e4b-it-qat', tier: 'free', guide: null, sources: [] };
 const ERROR_REPLY = { error: 'model_missing', message: "The model gemma4:e4b-it-qat isn't pulled yet. Run: ollama pull gemma4:e4b-it-qat", status: 503 };
 
-const browser = await chromium.launch();
+// Fake media devices: getUserMedia returns a synthetic audio stream for the voice checks.
+const browser = await chromium.launch({ args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 const pageErrors = [];
 page.on('pageerror', (err) => pageErrors.push(err.message));
@@ -576,6 +577,62 @@ await check('a paid answer flies a coin and says "1¢ paid via x402"', async () 
   await until(() => page.evaluate(() => /1¢ paid via x402/.test(document.getElementById('goat-toasts').innerText)), 'the payment toast');
   await shot('ui-14-paid');
   await setReply('ask', LLM_REPLY);
+});
+
+function wavInfo(b64) {
+  const b = Buffer.from(b64, 'base64');
+  return {
+    riff: b.toString('latin1', 0, 4),
+    wave: b.toString('latin1', 8, 12),
+    format: b.readUInt16LE(20),
+    channels: b.readUInt16LE(22),
+    rate: b.readUInt32LE(24),
+    bits: b.readUInt16LE(34),
+    seconds: b.readUInt32LE(40) / 2 / 16000,
+  };
+}
+
+await check('voice: Ctrl+Option+V records, sends a 16 kHz mono WAV, asks the transcript and speaks the answer', async () => {
+  await setReply('wallet', { ...WALLET, pro: true, proUntil: Date.now() + 86_400_000 });
+  await setReply('transcribe', { transcript: 'why do issues need a photo', model: 'gemma4:e4b-it-qat' });
+  await setReply('ask', LLM_REPLY);
+  await page.evaluate(() => {
+    window.__calls.length = 0;
+    window.__spoken = [];
+    window.speechSynthesis.speak = (u) => window.__spoken.push(u.text);
+  });
+  await emit({ type: 'voice-toggle' });
+  await until(() => page.evaluate(() => document.getElementById('goat-cursor').classList.contains('listening')), 'the listening pill');
+  assert.match(await page.locator('.voice-pill').innerText(), /Listening… Ctrl\+Option\+V to send/);
+  await shot('ui-15-listening');
+  await sleep(1200);
+  await emit({ type: 'voice-toggle' });
+  const [tc] = await until(async () => {
+    const c = await calls('transcribe');
+    return c.length && c;
+  }, 'goat.transcribe', 8000);
+  const info = wavInfo(tc.args[0]);
+  assert.deepEqual({ ...info, seconds: undefined }, { riff: 'RIFF', wave: 'WAVE', format: 1, channels: 1, rate: 16000, bits: 16, seconds: undefined });
+  assert.ok(info.seconds > 0.6 && info.seconds < 2.5, `recorded ${info.seconds} s`);
+  const [askCall] = await until(async () => {
+    const c = await calls('ask');
+    return c.length && c;
+  }, 'the ask');
+  assert.equal(askCall.args[0], 'why do issues need a photo');
+  await until(() => page.evaluate(() => window.__spoken.length > 0), 'the spoken answer');
+  assert.deepEqual(await page.evaluate(() => window.__spoken), [LLM_REPLY.say]);
+  assert.equal((await ui()).voice, false, 'voice mode ends with the answer');
+});
+
+await check('voice: free users are pointed to the Pro upgrade', async () => {
+  await setReply('wallet', WALLET);
+  await page.evaluate(() => (window.__calls.length = 0));
+  await emit({ type: 'voice-toggle' });
+  await page.waitForSelector('.wallet-balance', { state: 'visible' });
+  assert.match((await bubble()).text, /Voice mode is part of GOAT Pro/);
+  assert.equal((await calls('transcribe')).length, 0);
+  assert.equal(await page.evaluate(() => document.getElementById('goat-cursor').classList.contains('listening')), false);
+  await page.click('[data-action="close"]');
 });
 
 await check('no page errors or CSP violations', async () => {

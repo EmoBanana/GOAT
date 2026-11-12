@@ -55,7 +55,13 @@ async function until(fn, what, timeout = 8000) {
 let app;
 const pageErrors = [];
 try {
-  app = await electron.launch({ executablePath: electronPath, args: [root], env, timeout: 30_000 });
+  // Fake media devices so voice mode records a synthetic stream without a microphone prompt.
+  app = await electron.launch({
+    executablePath: electronPath,
+    args: [root, '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'],
+    env: { ...env, GOAT_FAKE_MEDIA: '1' },
+    timeout: 30_000,
+  });
   app.process().stderr?.on('data', (d) => process.stderr.write(`[app] ${d}`));
   const page = await app.firstWindow();
   page.on('pageerror', (err) => pageErrors.push(err.message));
@@ -203,6 +209,23 @@ try {
     assert.equal(me.body.tier, 'pro');
     await page.screenshot({ path: path.join(artifacts, 'electron-wallet.png') });
     await page.click('[data-action="close"]');
+  });
+
+  await check('voice mode (Pro): record, transcribe through main and Gemma, then ask', async () => {
+    ollama.calls.length = 0;
+    await app.evaluate(() => globalThis.__goatTest.toggleVoice());
+    await until(() => page.evaluate(() => document.getElementById('goat-cursor').classList.contains('listening')), 'listening');
+    await sleep(1200);
+    await app.evaluate(() => globalThis.__goatTest.toggleVoice());
+    await until(
+      () => page.evaluate(() => window.GOATUI.state().guide?.id === 'forma-log-issue' && window.GOATUI.state().guide.landed),
+      'the transcript "How do I log an issue?" to play the guide',
+      15_000,
+    );
+    const audioCall = ollama.chats().find((c) => c.body.messages?.[0]?.images?.length);
+    assert.ok(audioCall, 'the WAV reached Gemma');
+    assert.equal(Buffer.from(audioCall.body.messages[0].images[0], 'base64').toString('latin1', 8, 12), 'WAVE');
+    await page.keyboard.press('Escape');
   });
 
   await check('no page errors', async () => {

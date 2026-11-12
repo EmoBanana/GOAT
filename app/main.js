@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, powerMonitor, screen, shell, Tray } from 'electron';
+import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, powerMonitor, screen, shell, systemPreferences, Tray } from 'electron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sampleActiveWindow } from './lib/active-window.js';
@@ -98,6 +98,11 @@ function createWindow() {
       spellcheck: false,
     },
   });
+  // The overlay may use the microphone (voice mode), and nothing else.
+  win.webContents.session.setPermissionRequestHandler((wc, permission, callback, details) => {
+    callback(permission === 'media' && wc === win?.webContents && (details.mediaTypes || ['audio']).every((t) => t === 'audio'));
+  });
+  win.webContents.session.setPermissionCheckHandler((wc, permission) => permission === 'media' && wc === win?.webContents);
   win.setAlwaysOnTop(true, windowLevel);
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   win.setIgnoreMouseEvents(true, { forward: true });
@@ -205,6 +210,22 @@ async function openTimesheet() {
   send({ type: 'open-timesheet', timesheet });
 }
 
+// Ctrl+Option+V: start listening; press again to send (Pro). The renderer records; main
+// checks the microphone permission and reads the frontmost window for the ask context.
+async function toggleVoice() {
+  if (!win) return;
+  if (isMac && process.env.GOAT_FAKE_MEDIA !== '1' && systemPreferences.getMediaAccessStatus('microphone') !== 'granted') {
+    const allowed = await systemPreferences.askForMediaAccess('microphone');
+    if (!allowed) {
+      send({ type: 'voice-error', message: 'GOAT needs the microphone for voice mode. Allow it in System Settings > Privacy & Security > Microphone.' });
+      return;
+    }
+  }
+  const sample = await sampleActiveWindow({ timeoutMs: 700 });
+  if (sample && !isSelf(sample)) askContext = { app: sample.app, title: sample.title, url: sample.url || '' };
+  send({ type: 'voice-toggle' });
+}
+
 function captureStep(point) {
   if (!recorder.recording) return;
   const step = recorder.capture(point || screen.getCursorScreenPoint());
@@ -245,6 +266,7 @@ function registerIpc() {
     return { ok: true, url };
   });
   ipcMain.handle('goat:wallet', (event) => (fromOverlay(event) ? api.wallet() : { error: 'forbidden' }));
+  ipcMain.handle('goat:transcribe', (event, audio) => (fromOverlay(event) && typeof audio === 'string' ? api.transcribe(audio) : { error: 'forbidden' }));
   ipcMain.handle('goat:topup', (event, myr) => (fromOverlay(event) ? api.topup(Number(myr) || 10) : { error: 'forbidden' }));
   ipcMain.handle('goat:upgrade', (event) => (fromOverlay(event) ? api.upgradePro() : { error: 'forbidden' }));
   ipcMain.on('goat:open-link', (event, url) => {
@@ -292,7 +314,7 @@ function registerIpc() {
 }
 
 function registerHotkeys() {
-  const keys = { G: () => openAsk('hotkey'), R: () => toggleRecording(), T: () => toggleTracking() };
+  const keys = { G: () => openAsk('hotkey'), R: () => toggleRecording(), T: () => toggleTracking(), V: () => toggleVoice() };
   for (const [key, run] of Object.entries(keys)) {
     if (!globalShortcut.register(accelerator(key), run)) console.warn(`[goat] ${hotkey(key)} is already taken by another app.`);
   }
@@ -301,6 +323,7 @@ function registerHotkeys() {
 function trayMenu() {
   return Menu.buildFromTemplate([
     { label: `Ask GOAT (${hotkey('G')})`, click: () => openAsk('tray') },
+    { label: `Voice question, Pro (${hotkey('V')})`, click: () => toggleVoice() },
     recorder.recording
       ? { label: `Stop recording (${hotkey('R')})`, click: () => toggleRecording() }
       : { label: `Record a guide (${hotkey('R')})`, click: () => toggleRecording() },
@@ -352,6 +375,7 @@ if (!app.requestSingleInstanceLock()) {
         captureStep: (point) => captureStep(point),
         recording: () => ({ recording: recorder.recording, steps: recorder.steps, app: recorder.app }),
         toggleTracking: () => toggleTracking(),
+        toggleVoice: () => toggleVoice(),
         tracking: () => ({ tracking: tracker.tracking, queued: tracker.queued }),
         wallet: () => api.wallet(),
         payer: () => ({ kind: payer.kind, address: payer.address }),

@@ -4,6 +4,7 @@ import { guideSummary, publicGuide } from './guides/store.js';
 import { mountWallet, walletLinker } from './payments/routes.js';
 import { mountTimesheet } from './timesheet/routes.js';
 import { sanitizeUserId } from './users.js';
+import { mountVoice } from './voice.js';
 
 export function createApp({ config, guides, docs, llm, users, assist, mcp, projects, activity, payments = null, topups = null, logger = console }) {
   const app = express();
@@ -65,6 +66,7 @@ export function createApp({ config, guides, docs, llm, users, assist, mcp, proje
 
   if (projects && activity) mountTimesheet(app, { projects, activity });
   mountWallet(app, { config, users, payments, topups });
+  mountVoice(app, { config, users, llm });
 
   app.use('/api', (req) => {
     throw new HttpError(404, 'not_found', `No route for ${req.method} ${req.originalUrl}.`);

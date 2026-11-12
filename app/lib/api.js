@@ -74,5 +74,6 @@ export function createApi({ baseUrl, userId, walletAddress = null, fetchImpl = g
     wallet: () => request('GET', '/api/wallet', undefined, 8000),
     topup: (myr) => request('POST', '/api/wallet/topup', { myr }, 30_000),
     upgradePro: () => request('POST', '/api/pro/upgrade', {}, 30_000),
+    transcribe: (audio) => request('POST', '/api/voice/transcribe', { audio }, 90_000),
   };
 }

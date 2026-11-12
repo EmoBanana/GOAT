@@ -257,6 +257,35 @@ body {
 .hl-rect.locked { border-style: dashed; box-shadow: none; }
 .ask-context.scoped { color: var(--blue); font-weight: 600; }
 
+/* Voice mode: a red listening pill beside the cursor. */
+.cursor .voice-pill {
+  display: none;
+  position: absolute;
+  left: 18px;
+  top: 18px;
+  padding: 3px 9px 3px 22px;
+  border-radius: 999px;
+  background: #dc2626;
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.25);
+}
+.cursor .voice-pill::before {
+  content: "";
+  position: absolute;
+  left: 9px;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  margin-top: -3.5px;
+  border-radius: 50%;
+  background: #fff;
+  animation: goat-blink 1s ease-in-out infinite;
+}
+.cursor.listening .voice-pill { display: block; }
+
 /* Timesheet: red dot by the cursor while tracking, and the day's table. */
 .cursor .track-dot {
   display: none;
