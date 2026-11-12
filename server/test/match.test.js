@@ -84,6 +84,17 @@ test('ties go to the most recently recorded guide', () => {
   assert.equal(matchGuide('export a pdf', [recorded, shipped]).guide.id, 'recorded');
 });
 
+test('a guide recorded on this Mac beats a sample guide, even with the app bonus', () => {
+  const sample = { ...forma, recordedOn: 'sample-1440x900' };
+  // Recorded from the draft panel: GOAT was in front, so no app.
+  const recorded = { id: 'recorded', triggers: ['log an issue'], apps: [], recordedOn: '1710x1107', createdAt: 5 };
+  const inForma = { app: 'Google Chrome', title: 'Forma Build - Issues' };
+  assert.equal(matchGuide('how do I log an issue', [sample, recorded], inForma).guide.id, 'recorded');
+  assert.equal(matchGuide('how do I log an issue', [recorded, sample], inForma).guide.id, 'recorded');
+  // The sample still plays when no recorded guide matches.
+  assert.equal(matchGuide('how do I raise an issue', [sample, recorded], inForma).guide.id, 'forma-log-issue');
+});
+
 test('related guides are app matches or partial matches (score >= 0.34)', () => {
   const deck = { id: 'deck', triggers: ['present the pitch'], apps: ['Keynote'] };
   const other = { id: 'other', triggers: ['approve a timesheet'], apps: ['Excel'] };

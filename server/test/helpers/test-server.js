@@ -7,13 +7,17 @@ import { buildServer, listen } from '../../src/server.js';
 
 export const quietLogger = { log() {}, warn() {}, error() {} };
 
+// Tests run against the shipped guides only, never the ones recorded on this Mac.
+export const SHIPPED_GUIDES = ['forma-log-issue.json', 'pitch-deck-tour.json'];
+
 // Builds a real server on a random port with temp guide and data dirs.
 // Options: ollamaUrl, env, users (data/users.json contents), setupGuides(dir), logger,
 // mcp: { config, env } to run MCP servers (none by default, so tests never spawn real ones).
 export async function startTestServer({ ollamaUrl, env = {}, users, setupGuides, logger = quietLogger, mcp } = {}) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'goat-test-'));
   const guidesDir = path.join(tmp, 'guides');
-  fs.cpSync(path.join(ROOT, 'guides'), guidesDir, { recursive: true });
+  fs.mkdirSync(guidesDir, { recursive: true });
+  for (const file of SHIPPED_GUIDES) fs.copyFileSync(path.join(ROOT, 'guides', file), path.join(guidesDir, file));
   if (setupGuides) setupGuides(guidesDir);
   const dataDir = path.join(tmp, 'data');
   fs.mkdirSync(dataDir, { recursive: true });

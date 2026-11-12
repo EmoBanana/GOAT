@@ -56,12 +56,21 @@ export function scoreGuide(question, guide, context = {}) {
   };
 }
 
-// Best guide at or above the threshold. Ties go to the most recently recorded guide.
+// Shipped guides with placeholder positions (recordedOn "sample-…").
+export const isSample = (guide) => /^sample/i.test(String(guide?.recordedOn || ''));
+
+// Best guide at or above the threshold. A guide recorded on this Mac beats a sample guide that
+// also matches (whatever the app bonus), so recording one replaces the placeholder. Otherwise
+// ties go to the most recently recorded guide.
 export function matchGuide(question, guides, context = {}, threshold = THRESHOLD) {
   let best = null;
   for (const guide of guides) {
     const s = scoreGuide(question, guide, context);
     if (s.base === 0 || s.score < threshold) continue;
+    if (best && isSample(guide) !== isSample(best.guide)) {
+      if (isSample(best.guide)) best = s;
+      continue;
+    }
     const newer = (guide.createdAt || 0) > (best?.guide.createdAt || 0);
     if (!best || s.score > best.score || (s.score === best.score && newer)) best = s;
   }
