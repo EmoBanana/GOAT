@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; connect-src 'none'">
+    <title>GOAT</title>
+    <link rel="stylesheet" href="overlay.css">
+  </head>
+  <body>
+    <div id="goat-ring" class="ring" hidden><div class="ring-pulse"></div><div class="ring-core"></div></div>
+    <div id="goat-cursor" class="cursor" aria-hidden="true"></div>
+    <div id="goat-bubble" class="bubble interactive" role="status" aria-live="polite" hidden></div>
+    <div id="goat-backdrop" class="backdrop interactive" hidden></div>
+    <div id="goat-panel" class="panel interactive" hidden></div>
+    <div id="goat-toasts" class="toasts" aria-live="polite"></div>
+    <script src="cursor-art.js"></script>
+    <script src="overlay.js"></script>
+  </body>
+</html>
