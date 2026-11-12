@@ -94,8 +94,6 @@ export function loadConfig(env = process.env, root = ROOT) {
     elevenLabsUrl: str(env.ELEVENLABS_BASE_URL, 'https://api.elevenlabs.io').replace(/\/+$/, ''),
     elevenLabsVoice: str(env.ELEVENLABS_VOICE_ID, DEFAULT_VOICE),
     elevenLabsModel: str(env.ELEVENLABS_MODEL, DEFAULT_VOICE_MODEL),
-    // manglish: spoken answers the way colleagues in KL say it ("MCP ah? MCP is ..."). plain: as typed.
-    voiceStyle: str(env.GOAT_VOICE_STYLE, 'manglish') === 'plain' ? 'plain' : 'manglish',
     projectsFile: path.resolve(root, str(env.GOAT_PROJECTS_FILE, 'config/projects.json')),
     guidesDir: path.resolve(root, str(env.GOAT_GUIDES_DIR, 'guides')),
     docsDir: path.resolve(root, str(env.GOAT_DOCS_DIR, 'docs')),

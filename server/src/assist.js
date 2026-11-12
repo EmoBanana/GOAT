@@ -165,15 +165,6 @@ export const VOICE_PROMPT = [
   'When it helps, end with the next thing the user can do.',
 ].join(' ');
 
-// GOAT_VOICE_STYLE=manglish: spoken answers the way colleagues in KL say them. Typed answers and
-// guide steps stay as they are. Gemma repeats any phrase quoted here ("very easy one" and "can
-// already" ended every answer), so the particles are named, not shown in sentences.
-export const MANGLISH_PROMPT = [
-  'Say it in Manglish, the relaxed Malaysian English that friendly colleagues in Kuala Lumpur speak: warm and a little playful, never rude.',
-  'When asked what something is, open by echoing it with "ah?", for example "MCP ah? MCP is Model Context Protocol lah, the open standard that connects AI assistants to tools and data."',
-  'Elsewhere, end one or two sentences with a particle where a Malaysian would, such as lah, lor or mah, not the same one twice, and keep every name, number, menu and button exactly as it is.',
-].join(' ');
-
 const SCREEN_NOTE = (region) =>
   `This picture shows the user's screen around their mouse pointer${regionNote(region)}. Use it to see where they are: answer questions about "this" or "here" from it, and point to the buttons and menus you can see by name and position (for example "the blue Create button at the top right").`;
 
@@ -271,7 +262,7 @@ export function createAssist({ config, guides, docs, llm, mcp = null, chats = nu
     // Screen and document contents never go anywhere near web tools.
     const tools = deep && !picture && !view && !doc && mcp ? await mcp.tools() : [];
 
-    const system = [SYSTEM_PROMPT, doc && DOC_PROMPT, voice && VOICE_PROMPT, voice && config.voiceStyle === 'manglish' && MANGLISH_PROMPT, deep && DEEP_PROMPT, tools.length && TOOLS_PROMPT].filter(Boolean).join(' ');
+    const system = [SYSTEM_PROMPT, doc && DOC_PROMPT, voice && VOICE_PROMPT, deep && DEEP_PROMPT, tools.length && TOOLS_PROMPT].filter(Boolean).join(' ');
     const userText = smallTalk ? q : userMessage(q, ctx, found.text, { hideWindow: tools.length > 0, doc });
     const current = picture
       ? { role: 'user', content: `The user highlighted this part of the screen${regionNote(context?.region)}. The image shows it.\n\n${userText}`, images: [picture] }

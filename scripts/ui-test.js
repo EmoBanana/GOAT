@@ -774,7 +774,7 @@ await check('voice: a spoken question that matches a guide reads each step aloud
 
 await check("voice: GOAT's own voice plays when the server sends one, the words keep pace with it, and the Mac's voice is the fallback", async () => {
   const clip = toneWav(1500).toString('base64'); // the real clips are MP3; Web Audio decodes either
-  const say = 'MCP ah? MCP is Model Context Protocol lah, the open standard that connects AI assistants to tools.';
+  const say = 'MCP is Model Context Protocol, the open standard that connects AI assistants to tools.';
   const words = say.split(/\s+/).length;
   const answer = (text) =>
     page.evaluate((t) => {
@@ -818,9 +818,9 @@ await check("voice: GOAT's own voice plays when the server sends one, the words 
   // The server can't speak (no key, no network, quota used up): the Mac's voice reads it.
   await page.evaluate(() => (window.__speech.length = 0));
   await setReply('speak', { error: 'speech_unavailable', message: "GOAT's voice isn't available right now.", status: 503 });
-  await answer('Second answer lah.');
+  await answer('Second answer here.');
   await until(() => page.evaluate(() => window.__spoken.length === 1), "the Mac's voice");
-  assert.deepEqual(await page.evaluate(() => window.__spoken), ['Second answer lah.']);
+  assert.deepEqual(await page.evaluate(() => window.__spoken), ['Second answer here.']);
   await until(async () => (await lit()) === 3, 'the words of the fallback answer');
   assert.equal((await heard('speak:start')).length, 0, 'no clip was played');
   await page.keyboard.press('Escape');

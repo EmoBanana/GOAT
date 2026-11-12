@@ -125,7 +125,7 @@ async function speechCheck() {
   const name = `GOAT's voice from ElevenLabs (${voice.model})`;
   const started = Date.now();
   try {
-    const clip = await speech.say('MCP ah? MCP is Model Context Protocol lah.');
+    const clip = await speech.say('MCP is Model Context Protocol, the open standard that connects AI assistants to tools.');
     const bytes = Buffer.from(clip.audio, 'base64').length;
     report(bytes > 2000, name, `${Date.now() - started} ms, ${Math.round(bytes / 1024)} KB of audio`);
   } catch (err) {

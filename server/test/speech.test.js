@@ -3,11 +3,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { after, before, describe, test } from 'node:test';
-import { MANGLISH_PROMPT } from '../src/assist.js';
 import { DEFAULT_VOICE, DEFAULT_VOICE_MODEL, loadConfig, loadEnvFiles } from '../src/config.js';
 import { createSpeech } from '../src/speech.js';
 import { startMockElevenLabs, toneWav } from './helpers/mock-elevenlabs.js';
-import { closedPortUrl, startMockOllama } from './helpers/mock-ollama.js';
+import { closedPortUrl } from './helpers/mock-ollama.js';
 import { quietLogger, startTestServer } from './helpers/test-server.js';
 
 const PRO = { pat: { id: 'pat', proUntil: Date.now() + 86_400_000 } };
@@ -26,14 +25,14 @@ describe('POST /api/voice/speak with ElevenLabs', () => {
   });
 
   test('free users get 403 pro_required and nothing is sent', async () => {
-    const r = await speak(srv, 'MCP ah? MCP is Model Context Protocol lah.', 'freebie');
+    const r = await speak(srv, 'MCP is Model Context Protocol.', 'freebie');
     assert.equal(r.status, 403);
     assert.equal(r.body.error, 'pro_required');
     assert.equal(eleven.calls.length, 0);
   });
 
   test("Pro text goes to the voice with the server's key, and the audio comes back as base64", async () => {
-    const r = await speak(srv, '  MCP ah?\n MCP is Model Context Protocol lah. ');
+    const r = await speak(srv, '  MCP is\n Model Context Protocol. ');
     assert.equal(r.status, 200);
     assert.equal(r.body.voice, 'elevenlabs');
     assert.equal(r.body.mime, 'audio/mpeg');
@@ -45,7 +44,7 @@ describe('POST /api/voice/speak with ElevenLabs', () => {
     assert.equal(call.query.output_format, 'mp3_44100_128');
     assert.equal(call.key, 'test-key');
     assert.deepEqual(call.body, {
-      text: 'MCP ah? MCP is Model Context Protocol lah.',
+      text: 'MCP is Model Context Protocol.',
       model_id: DEFAULT_VOICE_MODEL,
       voice_settings: { stability: 0.4, similarity_boost: 0.75 },
     });
@@ -53,7 +52,7 @@ describe('POST /api/voice/speak with ElevenLabs', () => {
   });
 
   test('the same line again comes from memory, not from ElevenLabs', async () => {
-    const r = await speak(srv, 'MCP ah? MCP is Model Context Protocol lah.');
+    const r = await speak(srv, 'MCP is Model Context Protocol.');
     assert.equal(r.status, 200);
     assert.equal(r.body.cached, true);
     assert.equal(eleven.calls.length, 1);
@@ -66,7 +65,7 @@ describe('POST /api/voice/speak with ElevenLabs', () => {
     assert.equal(empty.body.error, 'empty_text');
     const none = await srv.request('POST', '/api/voice/speak', { user: 'pat', body: {} });
     assert.equal(none.status, 400);
-    const long = await speak(srv, 'lah '.repeat(300));
+    const long = await speak(srv, 'word '.repeat(250));
     assert.equal(long.status, 413);
     assert.equal(long.body.error, 'text_too_long');
     assert.equal(eleven.calls.length, before);
@@ -83,7 +82,7 @@ describe("when ElevenLabs can't speak, the answer is 503 so the overlay uses the
   test('no key: 503 speech_unavailable, and health says system', async () => {
     const srv = await startTestServer({ users: PRO });
     try {
-      const r = await speak(srv, 'Hello lah.');
+      const r = await speak(srv, 'Hello.');
       assert.equal(r.status, 503);
       assert.equal(r.body.error, 'speech_unavailable');
       assert.deepEqual((await srv.request('GET', '/api/health')).body.speech, { provider: 'system' });
@@ -96,7 +95,7 @@ describe("when ElevenLabs can't speak, the answer is 503 so the overlay uses the
     const eleven = await startMockElevenLabs();
     const srv = await startTestServer({ users: PRO, env: { ELEVENLABS_API_KEY: 'test-key', ELEVENLABS_BASE_URL: eleven.url, GOAT_TTS: 'system' } });
     try {
-      assert.equal((await speak(srv, 'Hello lah.')).status, 503);
+      assert.equal((await speak(srv, 'Hello.')).status, 503);
       assert.equal(eleven.calls.length, 0);
     } finally {
       await srv.close();
@@ -113,7 +112,7 @@ describe("when ElevenLabs can't speak, the answer is 503 so the overlay uses the
     try {
       assert.equal((await speech.say('Open Issues from the left menu.')).cached, false);
       eleven.state.fail = { status: 401, detail: 'quota_exceeded' };
-      await assert.rejects(speech.say('Top secret site name lah.'), { status: 503, code: 'speech_unavailable' });
+      await assert.rejects(speech.say('Top secret site name.'), { status: 503, code: 'speech_unavailable' });
       assert.equal(eleven.calls.length, 2);
       assert.equal(warnings.length, 1);
       assert.match(warnings[0], /answered 401 \(quota_exceeded\)/);
@@ -135,42 +134,7 @@ describe("when ElevenLabs can't speak, the answer is 503 so the overlay uses the
   test('an unreachable ElevenLabs is a 503 too', async () => {
     const config = loadConfig({ ELEVENLABS_API_KEY: 'test-key', ELEVENLABS_BASE_URL: await closedPortUrl() });
     const speech = createSpeech({ config, logger: quietLogger });
-    await assert.rejects(speech.say('Hello lah.'), { status: 503, code: 'speech_unavailable' });
-  });
-});
-
-describe('spoken answers in Manglish', () => {
-  const ask = (srv, body) => srv.request('POST', '/api/assist', { body: { question: 'what is a clash test', ...body } });
-
-  test('a spoken question asks Gemma for Manglish; a typed one never does', async () => {
-    const ollama = await startMockOllama();
-    const srv = await startTestServer({ ollamaUrl: ollama.url });
-    try {
-      await ask(srv, { voice: true });
-      await ask(srv, {});
-      const [spoken, typed] = ollama.chats().map((c) => c.body.messages[0].content);
-      assert.ok(spoken.includes(MANGLISH_PROMPT));
-      assert.match(spoken, /MCP ah\? MCP is Model Context Protocol lah/);
-      assert.match(spoken, /keep every name, number, menu and button exactly as it is/);
-      assert.ok(!typed.includes('Manglish'));
-    } finally {
-      await srv.close();
-      await ollama.close();
-    }
-  });
-
-  test('GOAT_VOICE_STYLE=plain keeps spoken answers in plain English', async () => {
-    const ollama = await startMockOllama();
-    const srv = await startTestServer({ ollamaUrl: ollama.url, env: { GOAT_VOICE_STYLE: 'plain' } });
-    try {
-      await ask(srv, { voice: true });
-      const system = ollama.chats()[0].body.messages[0].content;
-      assert.match(system, /spoken aloud.*read out/);
-      assert.ok(!system.includes('Manglish'));
-    } finally {
-      await srv.close();
-      await ollama.close();
-    }
+    await assert.rejects(speech.say('Hello.'), { status: 503, code: 'speech_unavailable' });
   });
 });
 

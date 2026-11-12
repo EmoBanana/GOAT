@@ -476,7 +476,6 @@ try {
     assert.ok(ask, 'the question went to Gemma with the screen around the pointer');
     assert.equal(ask.body.messages.at(-1).images.length, 1);
     assert.match(ask.body.messages[0].content, /spoken aloud/);
-    assert.match(ask.body.messages[0].content, /Manglish/);
     const said = 'Photos are the evidence for every issue.';
     await until(() => page.evaluate((t) => window.__speech.some((e) => e.voice === 'elevenlabs' && e.text === t), said), "the answer in GOAT's voice", 8000);
     assert.ok(eleven.calls.some((c) => c.body?.text === said), 'the answer text went to ElevenLabs from the server');
