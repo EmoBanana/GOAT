@@ -1,6 +1,7 @@
 node_modules/
 /data/
 .env
+.env.local
 test-artifacts/
 Claude outputs/
 .DS_Store

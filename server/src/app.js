@@ -7,11 +7,12 @@ import { guideSummary, publicGuide } from './guides/store.js';
 import { mountWallet, walletLinker } from './payments/routes.js';
 import { createProgress, mountProgress, progressId } from './progress.js';
 import { mountSite } from './site.js';
+import { mountSpeech } from './speech.js';
 import { mountTimesheet } from './timesheet/routes.js';
 import { sanitizeUserId } from './users.js';
 import { mountVoice } from './voice.js';
 
-export function createApp({ config, guides, docs, llm, users, assist, mcp, projects, activity, payments = null, topups = null, chats = null, logger = console }) {
+export function createApp({ config, guides, docs, llm, users, assist, mcp, projects, activity, payments = null, topups = null, chats = null, speech = null, logger = console }) {
   const app = express();
   const progress = createProgress();
   app.disable('x-powered-by');
@@ -33,6 +34,7 @@ export function createApp({ config, guides, docs, llm, users, assist, mcp, proje
       ollama: { host: config.ollamaHost, ...ollama },
       payments: { mode: config.payments, enforced: Boolean(payments), network: config.network, payTo: payments?.payTo ?? null },
       think: config.think,
+      speech: speech ? speech.status() : { provider: 'system' },
       mcp: mcp ? mcp.status() : [],
       guides: guides.count(),
       docs: { files: docs.files, chunks: docs.count },
@@ -85,6 +87,7 @@ export function createApp({ config, guides, docs, llm, users, assist, mcp, proje
   if (projects && activity) mountTimesheet(app, { projects, activity, llm, config, logger });
   mountWallet(app, { config, users, payments, topups });
   mountVoice(app, { config, users, llm, projects });
+  if (speech) mountSpeech(app, { users, speech });
   if (chats) mountChats(app, { chats });
   mountAccount(app, { config });
   mountProgress(app, { progress });

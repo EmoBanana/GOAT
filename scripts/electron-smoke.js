@@ -8,6 +8,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import electronPath from 'electron';
 import { _electron as electron } from 'playwright';
+import { startMockElevenLabs } from '../server/test/helpers/mock-elevenlabs.js';
 import { startMockOllama } from '../server/test/helpers/mock-ollama.js';
 import { startTestServer } from '../server/test/helpers/test-server.js';
 
@@ -19,8 +20,12 @@ const packagedApp = process.env.GOAT_E2E_APP ? path.resolve(process.env.GOAT_E2E
 const shot = (name) => path.join(artifacts, packagedApp ? name.replace(/^electron-/, 'packaged-') : name);
 
 const ollama = await startMockOllama({ reply: () => 'Photos are the evidence for every issue.' });
+const eleven = await startMockElevenLabs(); // GOAT's voice: answers a clip too quiet to hear
 // Payments on: every ask in this run is paid with x402 through the app's wallet abstraction.
-const srv = await startTestServer({ ollamaUrl: ollama.url, env: { GOAT_PAYMENTS: 'x402-local', GOAT_WELCOME_CREDIT_MYR: '2', MYR_PER_USD: '4.20' } });
+const srv = await startTestServer({
+  ollamaUrl: ollama.url,
+  env: { GOAT_PAYMENTS: 'x402-local', GOAT_WELCOME_CREDIT_MYR: '2', MYR_PER_USD: '4.20', ELEVENLABS_API_KEY: 'test-key', ELEVENLABS_BASE_URL: eleven.url },
+});
 const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'goat-e2e-'));
 const env = {
   ...process.env,
@@ -437,6 +442,10 @@ try {
       source.start();
       navigator.mediaDevices.getUserMedia = async () => out.stream.clone();
     }, wav);
+    await page.evaluate(() => {
+      window.__speech = [];
+      window.GOATUI.onEvent('speak:start', (e) => window.__speech.push(e));
+    });
     ollama.calls.length = 0;
     ollama.state.transcript = 'How do I log an issue?';
     await app.evaluate(() => globalThis.__goatTest.voiceHold(true));
@@ -457,6 +466,9 @@ try {
     assert.ok(audioCall, 'the WAV reached Gemma');
     const wavB64 = audioCall.body.messages.at(-1).images[0];
     assert.equal(Buffer.from(wavB64, 'base64').toString('latin1', 8, 12), 'WAVE');
+    // A spoken question's guide is read aloud in GOAT's voice: overlay -> main -> server -> ElevenLabs.
+    await until(() => eleven.calls.some((c) => c.key === 'test-key' && /Open Issues from the left menu\./.test(c.body?.text || '')), 'step 1 sent to be read aloud', 8000);
+    await until(() => page.evaluate(() => window.__speech.some((e) => e.voice === 'elevenlabs')), "step 1 in GOAT's voice", 8000);
     await page.keyboard.press('Escape');
 
     ollama.calls.length = 0;
@@ -469,6 +481,10 @@ try {
     assert.ok(ask, 'the question went to Gemma with the screen around the pointer');
     assert.equal(ask.body.messages.at(-1).images.length, 1);
     assert.match(ask.body.messages[0].content, /spoken aloud/);
+    assert.match(ask.body.messages[0].content, /Manglish/);
+    const said = 'Photos are the evidence for every issue.';
+    await until(() => page.evaluate((t) => window.__speech.some((e) => e.voice === 'elevenlabs' && e.text === t), said), "the answer in GOAT's voice", 8000);
+    assert.ok(eleven.calls.some((c) => c.body?.text === said), 'the answer text went to ElevenLabs from the server');
     await page.screenshot({ path: shot('electron-voice.png') });
   });
 
@@ -583,6 +599,7 @@ try {
   if (app) await app.close().catch(() => {});
   await srv.close();
   await ollama.close();
+  await eleven.close();
   fs.rmSync(userData, { recursive: true, force: true });
 }
 

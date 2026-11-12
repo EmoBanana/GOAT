@@ -92,6 +92,8 @@ export function createApi({ baseUrl, userId, walletAddress = null, fetchImpl = g
     topup: (myr) => request('POST', '/api/wallet/topup', { myr }, 30_000),
     upgradePro: () => request('POST', '/api/pro/upgrade', {}, 30_000),
     transcribe: (audio) => request('POST', '/api/voice/transcribe', { audio }, 90_000),
+    // GOAT's voice for a spoken answer: { audio: base64 MP3 }. Any error means: use the Mac's voice.
+    speak: (text) => request('POST', '/api/voice/speak', { text }, 12_000),
     chats: () => request('GET', '/api/chats', undefined, 8000),
     chat: (id) => request('GET', `/api/chats/${encodeURIComponent(id)}`, undefined, 8000),
     deleteChat: (id) => request('DELETE', `/api/chats/${encodeURIComponent(id)}`, undefined, 8000),

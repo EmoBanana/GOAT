@@ -273,8 +273,13 @@
     if (opts.intro) b.append(el('div', 'intro', opts.intro));
     const textEl = el('div', 'text', opts.reveal ? '' : opts.text || '');
     b.append(textEl);
-    if (opts.reveal) revealWords(textEl, opts.text || '');
-    else clearInterval(revealTimer);
+    if (opts.reveal) {
+      layWords(textEl, opts.text || '');
+      if (opts.reveal !== 'hold') startReveal(); // 'hold': the words wait for the voice
+    } else {
+      clearInterval(revealTimer);
+      revealSpans = null;
+    }
     if (opts.meta) b.append(el('div', 'meta', opts.meta));
     if (opts.sources) b.append(el('div', 'sources', opts.sources));
     if (opts.step || opts.next) {
@@ -701,36 +706,114 @@
   }
   if ('speechSynthesis' in window) window.speechSynthesis.addEventListener?.('voiceschanged', () => (bestVoice = pickVoice()));
 
-  // Speaks while voice mode is on (opts.force: always, e.g. guide steps of a spoken question).
-  function speak(text, opts = {}) {
-    if ((!state.voice && !opts.force) || !text || !('speechSynthesis' in window)) return false;
-    window.speechSynthesis.cancel();
+  // The Mac's own voice: it starts at once, and it's what GOAT falls back to.
+  function speakWithMac(text, opts) {
+    if (!('speechSynthesis' in window)) return false;
     const u = new SpeechSynthesisUtterance(text);
     bestVoice = bestVoice || pickVoice();
     if (bestVoice) u.voice = bestVoice;
     u.rate = 1.05;
-    u.onstart = () => emit('speak:start', { text });
+    u.onstart = () => emit('speak:start', { text, voice: 'system' });
     u.onend = () => emit('speak:end', { text });
     u.onerror = () => emit('speak:end', { text });
     window.speechSynthesis.speak(u);
+    if (opts.onStart) opts.onStart();
     return true;
   }
-  function stopSpeaking() {
-    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+
+  // GOAT's own voice comes from the server as audio (through main, so this page still makes no
+  // requests) and plays through Web Audio.
+  let audioCtx = null;
+  let speech = null; // the line on its way or playing: { text, node }
+  async function decodeClip(b64) {
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    audioCtx = audioCtx || new AudioContext();
+    // A context that isn't allowed to make sound stays suspended: don't wait on it for long.
+    await Promise.race([audioCtx.resume(), new Promise((resolve) => setTimeout(resolve, 300))]);
+    return audioCtx.state === 'running' ? audioCtx.decodeAudioData(bytes.buffer) : null;
   }
 
-  // Spoken answers appear word by word, about as fast as they're read out.
+  // Speaks while voice mode is on (opts.force: always, e.g. guide steps of a spoken question):
+  // in GOAT's voice when the server has one, else, or if that fails, in the Mac's.
+  // opts.onStart(ms) runs when the words start, with the clip's length when it's known.
+  function speak(text, opts = {}) {
+    if ((!state.voice && !opts.force) || !text) return false;
+    silence();
+    if (!goat.speak) return speakWithMac(text, opts);
+    const mine = (speech = { text, node: null });
+    emit('speak:wait', { text });
+    Promise.resolve()
+      .then(() => goat.speak(text))
+      .then((reply) => (reply && typeof reply.audio === 'string' && reply.audio ? decodeClip(reply.audio) : null))
+      .catch(() => null)
+      .then((clip) => {
+        if (speech !== mine) return; // stopped meanwhile, or something newer is being said
+        if (!clip) {
+          speech = null;
+          emit('speak:end', { text }); // the wait is over; the Mac's voice starts its own turn
+          if (!speakWithMac(text, opts) && opts.onStart) opts.onStart();
+          return;
+        }
+        const node = audioCtx.createBufferSource();
+        node.buffer = clip;
+        node.connect(audioCtx.destination);
+        node.onended = () => {
+          if (speech !== mine) return;
+          speech = null;
+          emit('speak:end', { text });
+        };
+        mine.node = node;
+        node.start();
+        const ms = Math.round(clip.duration * 1000);
+        emit('speak:start', { text, voice: 'elevenlabs', ms });
+        if (opts.onStart) opts.onStart(ms);
+      });
+    return true;
+  }
+  function silence() {
+    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+    const was = speech;
+    speech = null;
+    if (!was) return;
+    if (was.node) {
+      was.node.onended = null;
+      try {
+        was.node.stop();
+      } catch {
+        // it had already finished
+      }
+    }
+    emit('speak:end', { text: was.text });
+  }
+  function stopSpeaking() {
+    silence();
+    startReveal(); // words still waiting for the voice appear anyway
+  }
+
+  // Spoken answers appear word by word, about as fast as they're read out. layWords puts the
+  // words down dimmed; startReveal(ms) lights them up, over the clip when its length is known.
   let revealTimer = null;
-  function revealWords(container, text, ms = 190) {
+  let revealSpans = null; // words laid down and not started yet
+  function layWords(container, text) {
     clearInterval(revealTimer);
     container.replaceChildren();
-    const words = String(text).split(/(\s+)/).map((w) => {
+    revealSpans = String(text).split(/(\s+)/).map((w) => {
       const span = document.createElement('span');
       span.className = 'w';
       span.textContent = w;
       container.append(span);
       return span;
     });
+  }
+  function startReveal(clipMs) {
+    const words = revealSpans;
+    if (!words) return;
+    revealSpans = null;
+    clearInterval(revealTimer);
+    const count = words.filter((w) => w.textContent.trim()).length || 1;
+    const ms = clipMs ? clamp((clipMs * 0.92) / count, 60, 400) : 190;
     let i = 0;
     revealTimer = setInterval(() => {
       while (i < words.length && !words[i].textContent.trim()) words[i++].classList.add('on');
@@ -768,9 +851,21 @@
       text: reply.say || '…',
       sources: hosts.length ? `Sources: ${hosts.join(', ')}` : '',
       follow: true,
-      reveal: spoken,
+      reveal: spoken && 'hold',
     });
-    speak(reply.say);
+    const shown = state.bubble;
+    const said = speak(reply.say, {
+      onStart: (ms) => {
+        if (state.bubble !== shown) return;
+        startReveal(ms);
+        if (ms) {
+          // stay up until GOAT has finished saying it
+          clearTimeout(bubbleTimer);
+          bubbleTimer = setTimeout(hideBubble, Math.max(ms + 2500, 7000));
+        }
+      },
+    });
+    if (!said) startReveal();
   }
 
   async function ask(question, extra) {
@@ -870,6 +965,7 @@
       state.heard = on ? String(heard) : '';
     },
     stopSpeaking,
+    speechPending: () => Boolean(speech && !speech.node), // GOAT's voice is on its way
     resumeFollow,
     addAskExtra,
     chat: () => (state.chat ? JSON.parse(JSON.stringify(state.chat)) : null),

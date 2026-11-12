@@ -7,6 +7,7 @@ import { createOllama } from './llm/ollama.js';
 import { createMcpHub } from './mcp/hub.js';
 import { createChats } from './chats.js';
 import { createPayments, createTopups } from './payments/index.js';
+import { createSpeech } from './speech.js';
 import { createActivityStore } from './timesheet/activity.js';
 import { loadProjects } from './timesheet/projects.js';
 import { createUsers } from './users.js';
@@ -26,8 +27,9 @@ export async function buildServer(config, overrides = {}) {
   const activity = overrides.activity ?? createActivityStore({ dataDir: config.dataDir });
   const payments = overrides.payments !== undefined ? overrides.payments : createPayments({ config, users, logger });
   const topups = createTopups({ config, payments });
-  const app = createApp({ config, guides, docs, llm, users, assist, mcp, projects, activity, payments, topups, chats, logger });
-  return { app, config, guides, docs, llm, users, mcp, assist, projects, activity, payments, chats };
+  const speech = overrides.speech ?? createSpeech({ config, logger });
+  const app = createApp({ config, guides, docs, llm, users, assist, mcp, projects, activity, payments, topups, chats, speech, logger });
+  return { app, config, guides, docs, llm, users, mcp, assist, projects, activity, payments, chats, speech };
 }
 
 export function listen(app, { port, host }) {

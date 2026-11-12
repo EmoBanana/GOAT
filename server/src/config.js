@@ -1,12 +1,32 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseEnv } from 'node:util';
 
 export const ROOT = fileURLToPath(new URL('../../', import.meta.url));
+
+// Settings live in .env; keys a tool writes for the project live in .env.local (ElevenLabs'
+// sign-in puts ELEVENLABS_API_KEY there). A variable already set wins, then .env.local, then
+// .env. An empty value counts as unset, so a blank "KEY=" line can't hide a key.
+export function loadEnvFiles(root = ROOT, env = process.env) {
+  for (const name of ['.env.local', '.env']) {
+    const file = path.join(root, name);
+    if (!fs.existsSync(file)) continue;
+    for (const [key, value] of Object.entries(parseEnv(fs.readFileSync(file, 'utf8')))) {
+      if (!env[key]) env[key] = value;
+    }
+  }
+}
 
 // The Gemma 4 E4B build already on the demo Mac (text, images and audio). Pro and transcription
 // use it too unless set: gemma4:12b answers better, but a 16 GB Mac can't keep both loaded and
 // swapping models mid-demo costs seconds per answer.
 export const DEFAULT_MODEL = 'gemma4:e4b-it-qat';
+
+// GOAT's voice on ElevenLabs: Jessica, a premade voice ("playful, bright, warm") that every plan
+// can use through the API, on the fastest and cheapest model.
+export const DEFAULT_VOICE = 'cgSgspJ2msm6clMCkdW9';
+export const DEFAULT_VOICE_MODEL = 'eleven_flash_v2_5';
 
 // .env values may carry trailing "# comments"; Node strips them, but be safe.
 function str(value, fallback) {
@@ -67,6 +87,15 @@ export function loadConfig(env = process.env, root = ROOT) {
     cdp: { apiKeyId: str(env.CDP_API_KEY_ID, ''), apiKeySecret: str(env.CDP_API_KEY_SECRET, ''), walletSecret: str(env.CDP_WALLET_SECRET, '') },
     reownProjectId: str(env.REOWN_PROJECT_ID, ''), // sign-in with Reown AppKit (dashboard.reown.com)
     numCtx: num(env.GOAT_NUM_CTX, 8192), // the model's context window: a whole deck or page fits
+    // Spoken answers: ElevenLabs when its key is set (the answer's text goes there), else the
+    // Mac's own voice. GOAT_TTS=system keeps every word on the laptop.
+    tts: str(env.GOAT_TTS, 'elevenlabs') === 'system' ? 'system' : 'elevenlabs',
+    elevenLabsKey: str(env.ELEVENLABS_API_KEY, ''),
+    elevenLabsUrl: str(env.ELEVENLABS_BASE_URL, 'https://api.elevenlabs.io').replace(/\/+$/, ''),
+    elevenLabsVoice: str(env.ELEVENLABS_VOICE_ID, DEFAULT_VOICE),
+    elevenLabsModel: str(env.ELEVENLABS_MODEL, DEFAULT_VOICE_MODEL),
+    // manglish: spoken answers the way colleagues in KL say it ("MCP ah? MCP is ..."). plain: as typed.
+    voiceStyle: str(env.GOAT_VOICE_STYLE, 'manglish') === 'plain' ? 'plain' : 'manglish',
     projectsFile: path.resolve(root, str(env.GOAT_PROJECTS_FILE, 'config/projects.json')),
     guidesDir: path.resolve(root, str(env.GOAT_GUIDES_DIR, 'guides')),
     docsDir: path.resolve(root, str(env.GOAT_DOCS_DIR, 'docs')),

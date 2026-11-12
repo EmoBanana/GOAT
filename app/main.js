@@ -548,6 +548,7 @@ function registerIpc() {
   });
   ipcMain.handle('goat:wallet', (event) => (fromOverlay(event) ? api.wallet() : { error: 'forbidden' }));
   ipcMain.handle('goat:transcribe', (event, audio) => (fromOverlay(event) && typeof audio === 'string' ? api.transcribe(audio) : { error: 'forbidden' }));
+  ipcMain.handle('goat:speak', (event, text) => (fromOverlay(event) && typeof text === 'string' ? api.speak(text) : { error: 'forbidden' }));
   ipcMain.handle('goat:topup', (event, myr) => (fromOverlay(event) ? api.topup(Number(myr) || 10) : { error: 'forbidden' }));
   ipcMain.handle('goat:upgrade', (event) => (fromOverlay(event) ? api.upgradePro() : { error: 'forbidden' }));
   ipcMain.on('goat:open-link', (event, url) => {

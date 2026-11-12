@@ -1,16 +1,17 @@
 // Real-model checks against the local Ollama, run by hand on the Mac: npm run smoke
-// Uses GOAT_MODEL and GOAT_STT_MODEL from .env or the environment.
+// Uses GOAT_MODEL and GOAT_STT_MODEL from .env or the environment. With ELEVENLABS_API_KEY set
+// (.env.local) it also asks ElevenLabs for one short line, which uses a few of its characters.
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { loadConfig, ROOT } from '../server/src/config.js';
+import { loadConfig, loadEnvFiles } from '../server/src/config.js';
 import { createOllama, hasModel } from '../server/src/llm/ollama.js';
+import { createSpeech } from '../server/src/speech.js';
 import { createDescriber } from '../server/src/timesheet/describe.js';
 import { buildTimeline } from '../server/src/timesheet/timeline.js';
 
-const envFile = path.join(ROOT, '.env');
-if (fs.existsSync(envFile)) process.loadEnvFile(envFile);
+loadEnvFiles();
 const config = loadConfig();
 const llm = createOllama({ host: config.ollamaHost, keepAlive: config.keepAlive, timeoutMs: 180_000, numCtx: config.numCtx });
 
@@ -112,5 +113,26 @@ async function transcribeCheck() {
 }
 
 await transcribeCheck();
+
+// GOAT's voice: one short line from ElevenLabs comes back as audio.
+async function speechCheck() {
+  const speech = createSpeech({ config, logger: { warn() {} } });
+  const voice = speech.status();
+  if (voice.provider !== 'elevenlabs') {
+    console.log(`SKIP  GOAT's voice from ElevenLabs: ${config.tts === 'system' ? 'GOAT_TTS=system' : 'no ELEVENLABS_API_KEY'}, so answers are read in the Mac's voice`);
+    return;
+  }
+  const name = `GOAT's voice from ElevenLabs (${voice.model})`;
+  const started = Date.now();
+  try {
+    const clip = await speech.say('MCP ah? MCP is Model Context Protocol lah.');
+    const bytes = Buffer.from(clip.audio, 'base64').length;
+    report(bytes > 2000, name, `${Date.now() - started} ms, ${Math.round(bytes / 1024)} KB of audio`);
+  } catch (err) {
+    report(false, name, `${err.message} Check the key with: npx -y @elevenlabs/cli@latest onboard check --env-path .env.local`);
+  }
+}
+
+await speechCheck();
 console.log(failures ? `\n${failures} check(s) failed.` : '\nAll checks passed.');
 process.exit(failures ? 1 : 0);

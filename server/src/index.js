@@ -1,13 +1,10 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import { loadConfig, ROOT } from './config.js';
+import { loadConfig, loadEnvFiles } from './config.js';
 import { buildServer, listen } from './server.js';
 
-const envFile = path.join(ROOT, '.env');
-if (fs.existsSync(envFile)) process.loadEnvFile(envFile);
+loadEnvFiles(); // .env.local (keys such as ELEVENLABS_API_KEY), then .env
 
 const config = loadConfig();
-const { app, guides, docs, llm, mcp } = await buildServer(config);
+const { app, guides, docs, llm, mcp, speech } = await buildServer(config);
 
 function shutdown() {
   mcp.close();
@@ -26,6 +23,13 @@ try {
   throw err;
 }
 console.log(`[goat] Server on http://${config.host}:${config.port} · ${guides.count()} guides · ${docs.count} doc chunks`);
+
+const voice = speech.status();
+console.log(
+  voice.provider === 'elevenlabs'
+    ? `[goat] Spoken answers use ElevenLabs (${voice.model}, voice ${voice.voice})`
+    : `[goat] Spoken answers use the Mac's voice${config.tts === 'system' ? ' (GOAT_TTS=system)' : ' (no ELEVENLABS_API_KEY)'}`,
+);
 
 // Tools for questions the SOPs don't cover (config/mcp.json), started in the background.
 for (const s of mcp.status()) {

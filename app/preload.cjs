@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('goat', {
   upgradePro: () => ipcRenderer.invoke('goat:upgrade'),
   openLink: (url) => ipcRenderer.send('goat:open-link', url),
   transcribe: (audio) => ipcRenderer.invoke('goat:transcribe', audio),
+  speak: (text) => ipcRenderer.invoke('goat:speak', text),
   account: () => ipcRenderer.invoke('goat:account'),
   signIn: (mode) => ipcRenderer.invoke('goat:sign-in', mode),
   signInOffline: () => ipcRenderer.invoke('goat:sign-in-offline'),

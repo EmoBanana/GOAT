@@ -268,7 +268,8 @@
     } finally {
       ui.setVoice(false);
       busy = false;
-      if (!turn && ui.cursorEl.dataset.voice === 'working') setState('');
+      // The dots stay while GOAT's voice is on its way: speak:start or speak:end takes over.
+      if (!turn && ui.cursorEl.dataset.voice === 'working' && !ui.speechPending()) setState('');
     }
   }
 
@@ -284,7 +285,8 @@
     if (!turn) setState('speaking');
   });
   ui.onEvent('speak:end', () => {
-    if (ui.cursorEl.dataset.voice === 'speaking') setState('');
+    const now = ui.cursorEl.dataset.voice;
+    if (now === 'speaking' || (now === 'working' && !busy && !turn)) setState('');
   });
   ui.onEvent('reply', (reply) => {
     voiceGuide = ui.state().voice && reply && reply.source === 'guide' && reply.guide ? reply.guide.id : null;
