@@ -72,12 +72,30 @@ function send(message) {
 
 const fromOverlay = (event) => Boolean(win) && event.sender === win.webContents;
 
-// The overlay covers the primary display; the renderer works in window coordinates.
+// Test runs keep out of the user's way (GOAT_TEST_QUIET=0 brings the old behaviour back): the
+// overlay sits past the bottom-right corner of the screen, with one pixel still on it so macOS
+// keeps drawing it, and it never takes the keyboard. An on-screen test overlay swallowed the
+// user's clicks while a panel was open, and their clicks closed the test's forms. Positions don't
+// change: everything is still measured from the display's corner.
+const quietTests = process.env.GOAT_TEST_HOOKS === '1' && process.env.GOAT_TEST_QUIET !== '0';
+// Where the overlay is, for the renderer's window coordinates.
+const overlayBounds = () => (quietTests ? screen.getPrimaryDisplay().bounds : win.getBounds());
+
+// The overlay covers the primary display; the renderer works in window coordinates. The insets say
+// how far the menu bar and the Dock reach in (both draw above the overlay), so docked cards sit
+// clear of them.
 function fitToPrimary() {
   if (!win) return;
-  win.setBounds(screen.getPrimaryDisplay().bounds);
-  const b = win.getBounds();
-  send({ type: 'origin', x: b.x, y: b.y, width: b.width, height: b.height });
+  const { bounds: display, workArea: work } = screen.getPrimaryDisplay();
+  win.setBounds(quietTests ? { ...display, x: display.x + display.width - 1, y: display.y + display.height - 1 } : display);
+  const b = overlayBounds();
+  const insets = {
+    top: work.y - display.y,
+    right: display.x + display.width - (work.x + work.width),
+    bottom: display.y + display.height - (work.y + work.height),
+    left: work.x - display.x,
+  };
+  send({ type: 'origin', x: b.x, y: b.y, width: b.width, height: b.height, insets });
 }
 
 function createWindow() {
@@ -142,7 +160,7 @@ function startCursorStream() {
   cursorTimer = setInterval(() => {
     if (!win || win.isDestroyed() || streamPaused) return;
     const p = screen.getCursorScreenPoint();
-    const b = win.getBounds();
+    const b = overlayBounds();
     const point = { x: p.x - b.x, y: p.y - b.y };
     if (lastCursor && lastCursor.x === point.x && lastCursor.y === point.y) return;
     lastCursor = point;
@@ -167,6 +185,7 @@ async function openAsk(source = 'hotkey') {
     const sample = await sampleActiveWindow({ timeoutMs: 700 });
     if (sample && !isSelf(sample)) {
       askContext = { app: sample.app, title: sample.title, url: sample.url || '' };
+  if (quietTests) return; // a test drives the page itself; the keyboard stays with the user
       askPid = Number(sample.pid) || 0;
     }
     focusOverlay();
