@@ -4,13 +4,16 @@ import { matchGuide, RELATED_MIN, relatedGuides, wantsExplanation } from './guid
 
 export const SYSTEM_PROMPT = [
   'You are GOAT, a friendly senior engineer at Gamuda who helps colleagues right on their screen.',
+  'You know the tools engineers use, such as Revit, AutoCAD, Navisworks, Bluebeam, Forma and Autodesk Build, and Excel.',
   'Answer in at most 3 short sentences of plain text, with no markdown, lists or headings.',
-  'Use the provided context from company procedures and guides when it is relevant.',
-  "If the user wants click-by-click steps and the context has no guide for it, say plainly that you don't have a guide for that yet, then give your best short advice.",
+  'Use the provided context from company procedures and guides when it is relevant; otherwise answer from your own knowledge.',
+  'When asked how to do something, give the actual steps in order, naming the exact menu, tab, tool or button and where it is in the app.',
+  'Mention a keyboard shortcut only if you are certain of it.',
+  "Be direct: never say you don't have a guide or instructions for something, and don't send the user off to documentation.",
   'Never invent project data such as project codes, names, people, dates or numbers.',
 ].join(' ');
 
-export const DEEP_PROMPT = 'No company procedure or guide covers this question, so think it through before you answer.';
+export const DEEP_PROMPT = 'Think it through before you answer.';
 export const TOOLS_PROMPT = [
   'You can use the tools provided, such as web search.',
   'Search when the answer depends on facts you are not sure of, then answer from what you found.',
@@ -111,7 +114,7 @@ function userMessage(question, ctx, contextText, { hideWindow = false } = {}) {
     .filter(Boolean)
     .join('\n');
   return [
-    contextText ? `Context from company procedures and guides:\n${contextText}` : 'No company procedure or guide matched this question.',
+    contextText && `Context from company procedures and guides:\n${contextText}`,
     open && `What the user has open:\n${open}`,
     `Question: ${question}`,
   ]
@@ -137,7 +140,7 @@ export const VOICE_PROMPT = [
 ].join(' ');
 
 const SCREEN_NOTE = (region) =>
-  `This picture shows the user's screen around their mouse pointer${regionNote(region)}. Use it when the question is about something on screen ("this", "here").`;
+  `This picture shows the user's screen around their mouse pointer${regionNote(region)}. Use it to see where they are: answer questions about "this" or "here" from it, and point to the buttons and menus you can see by name and position (for example "the blue Create button at the top right").`;
 
 // The "server decides" router: a verified guide when one matches, otherwise Gemma.
 // Gemma answers fast when the SOPs or guides cover the question (or it's small talk), and

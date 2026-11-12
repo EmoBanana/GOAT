@@ -238,7 +238,12 @@ describe('adaptive thinking and MCP tools', () => {
       const [call] = ollama.chats();
       assert.equal(call.body.think, true);
       assert.equal(call.body.tools, undefined, 'no MCP servers configured');
-      assert.match(call.body.messages[0].content, /think it through/);
+      assert.match(call.body.messages[0].content, /think it through/i);
+      // No "I don't have a guide for that yet": Gemma is asked for real steps and isn't told
+      // that nothing matched.
+      assert.match(call.body.messages[0].content, /give the actual steps/);
+      assert.doesNotMatch(call.body.messages[0].content, /say plainly/);
+      assert.doesNotMatch(call.body.messages.at(-1).content, /matched|no company procedure/i);
     } finally {
       await srv.close();
       await ollama.close();
