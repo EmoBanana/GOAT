@@ -1,0 +1,15 @@
+{
+  "id": "pitch-deck-tour",
+  "title": "Tour the pitch deck",
+  "intro": "Here's the deck in four slides. Follow the blue cursor.",
+  "triggers": ["walk us through the deck", "present the pitch", "walk through the deck", "tour the deck"],
+  "apps": ["Keynote", "PowerPoint", "POWERPNT"],
+  "context": "A tour of the pitch deck: title, problem, solution, business model.",
+  "recordedOn": "sample-1440x900",
+  "steps": [
+    { "x": 720, "y": 300, "label": "Title", "say": "Start with the title slide.", "waitMs": 5000 },
+    { "x": 520, "y": 430, "label": "Problem", "say": "Here's the problem we're solving.", "waitMs": 6500 },
+    { "x": 900, "y": 470, "label": "Solution", "say": "Here's how we solve it.", "waitMs": 6000 },
+    { "x": 720, "y": 600, "label": "Business model", "say": "And here's the business model.", "waitMs": 6500 }
+  ]
+}
