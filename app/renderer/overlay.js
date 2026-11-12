@@ -446,9 +446,12 @@
     focus();
     setTimeout(focus, 60); // Electron focuses the window late
   }
-  // opts: { name, html, keyboard, focus, onclick, onsubmit, oninput, backdropCloses, onEscape, dock }
+  // opts: { name, html, keyboard, focus, onclick, onsubmit, oninput, backdropCloses, onEscape, dock, back }
   // dock: 'right' puts a small card at the bottom right, above the Dock; without the keyboard it
   // has no backdrop, so the apps around it keep working.
+  // back: { label, go } puts "← label" on top, for a card opened from another one (the account
+  // card's chats, timesheet and wallet go back to it).
+  const BACK_ARROW = '<svg viewBox="0 0 14 14" aria-hidden="true"><path d="M12.5 7 H2.5 M6.5 3 L2.5 7 L6.5 11" fill="none" stroke="currentColor" stroke-width="2.2"/></svg>';
   let panelEscape = null;
   // The menu bar and the Dock draw above the overlay; main says how far they reach in.
   function setInsets(insets) {
@@ -464,8 +467,21 @@
     panelEscape = opts.onEscape || null;
     p.className = `panel interactive${opts.name ? ` panel-${opts.name}` : ''}${opts.dock === 'right' ? ' dock-right' : ''}`;
     p.innerHTML = opts.html || '';
+    const back = opts.back && typeof opts.back.go === 'function' ? opts.back : null;
+    if (back) {
+      const button = el('button', 'back');
+      button.type = 'button';
+      button.dataset.back = '';
+      button.innerHTML = BACK_ARROW;
+      button.append(el('span', '', back.label || 'Back'));
+      const row = el('div', 'panel-back');
+      row.append(button);
+      p.prepend(row);
+    }
     placeSaved(p, opts.name);
-    p.onclick = opts.onclick || null;
+    p.onclick = back
+      ? (event) => (event.target.closest('[data-back]') ? back.go() : opts.onclick && opts.onclick(event))
+      : opts.onclick || null;
     p.onsubmit = opts.onsubmit || null;
     p.oninput = opts.oninput || null;
     p.hidden = false;
@@ -635,6 +651,7 @@
   }
 
   // opts.showThread: open with the chat's turns listed (a chat picked in the account panel).
+  // opts.back: opened from the account card, so it docks in that card's place with a way back.
   function openAsk(opts = {}) {
     stopGuide('ask');
     hideBubble();
@@ -644,6 +661,8 @@
       name: 'ask',
       html: ASK_HTML,
       focus: '#goat-ask-input',
+      dock: opts.back ? 'right' : undefined,
+      back: opts.back,
       onclick: (event) => {
         const button = event.target.closest('[data-action]');
         if (!button) return;

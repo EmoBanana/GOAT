@@ -22,7 +22,7 @@
   });
   ui.onEvent('open-timesheet', (msg) => {
     if (msg.loading) {
-      openSheet(null);
+      openSheet(null, msg.back); // back: opened from the account card
       phase = 'loading';
       return;
     }
@@ -70,7 +70,7 @@
     '<button type="button" data-action="csv">Export CSV</button><button type="button" class="primary" data-action="approve">Approve</button></div>' +
     '</div>';
 
-  function openSheet(timesheet) {
+  function openSheet(timesheet, back) {
     current = timesheet;
     // Docked at the bottom right like the account cards: the apps stay usable while it's open.
     const p = ui.openPanel({
@@ -78,6 +78,7 @@
       html: HTML,
       keyboard: false,
       dock: 'right',
+      back,
       onclick: (event) => {
         const button = event.target.closest('[data-action]');
         if (!button || button.disabled) return;
@@ -175,8 +176,9 @@
 
   // Today's timesheet without stopping tracking (the account card opens it): the same panel,
   // open at once and filled in when the day's lines are written.
-  async function openToday() {
-    ui.emit('open-timesheet', { loading: true });
+  // opts.back: the account card opened it ("← Account").
+  async function openToday(opts = {}) {
+    ui.emit('open-timesheet', { loading: true, back: opts.back });
     let t = null;
     try {
       t = goat.getTimesheet ? await goat.getTimesheet() : null;

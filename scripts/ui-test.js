@@ -547,6 +547,7 @@ await check('timesheet: opens at once, then the day as activities with times, by
   assert.ok(box.width > 400, JSON.stringify(box));
   assert.equal(await page.locator('#goat-backdrop').isHidden(), true, 'no backdrop');
   assert.equal(await page.evaluate(() => getComputedStyle(document.getElementById('goat-panel')).borderTopWidth), '2px');
+  assert.equal(await page.locator('#goat-panel .panel-back').count(), 0, 'opened by main: nothing to go back to');
   await shot('ui-11-timesheet');
   await page.click('[data-action="approve"]');
   await until(async () => (await page.locator('.ts-status').innerText()) === 'Approved', 'the approved status');
@@ -862,7 +863,18 @@ await check('account (Ctrl+Option+A): who you are, your balance and your chats; 
   assert.match(thread, /Why do issues need a photo\?[\s\S]*Photos are the evidence[\s\S]*Showed the guide “Log an issue in Forma Build”/);
   assert.equal(await page.getAttribute('#goat-ask-input', 'placeholder'), 'Ask a follow-up…');
   assert.equal(await page.locator('[data-action="toggle-thread"]').innerText(), 'Hide', 'a chat picked in the account panel opens listed');
+  // It opens in the account card's place, docked at the bottom right, with a way back.
+  const chatBox = await until(async () => {
+    const b = await page.locator('#goat-panel').boundingBox();
+    return b && b.x + b.width >= 1440 - 24 && b.y + b.height >= 900 - 24 && b;
+  }, 'the chat docked where the account card was');
+  assert.ok(chatBox.width <= 420, JSON.stringify(chatBox));
+  assert.equal(await page.locator('#goat-panel .panel-back').innerText(), 'Account');
   await shot('ui-19-thread');
+  await page.click('#goat-panel [data-back]');
+  await page.waitForSelector('.panel-account .acct-chat', { state: 'visible' });
+  await page.click(`[data-chat="${CHAT_ID}"]`);
+  await page.waitForSelector('.panel-ask .ask-thread', { state: 'visible' });
 
   // The follow-up continues that chat.
   await setReply('ask', { ...LLM_REPLY, say: 'Whoever raised it checks the fix.', chatId: CHAT_ID, chatTitle: OLD_CHAT.title, chatTurns: 3 });
@@ -880,6 +892,7 @@ await check('account (Ctrl+Option+A): who you are, your balance and your chats; 
   // Show lists the turns and typing carries on.
   await emit({ type: 'open-ask', context: {} });
   await page.waitForSelector('.ask-thread', { state: 'visible' });
+  assert.equal(await page.locator('#goat-panel .panel-back').count(), 0, 'the ask hotkey opens in the middle, with nothing to go back to');
   const folded = await page.evaluate(() => {
     const t = document.querySelector('.ask-thread');
     return { text: t.innerText, height: t.getBoundingClientRect().height };
@@ -960,6 +973,9 @@ await check("account: today's timesheet opens from the account card, tracking or
   assert.deepEqual((await calls('getTimesheet'))[0].args, [], "today's, without stopping tracking");
   assert.match(await page.locator('.ts-act').innerText(), /Worked on the GOAT pitch presentation in Canva\./);
   assert.equal(await page.evaluate(() => document.getElementById('goat-cursor').classList.contains('tracking')), true, 'still tracking');
+  // Opened from the account card, it has a way back to it.
+  await page.click('.panel-timesheet [data-back]');
+  await page.waitForSelector('.panel-account', { state: 'visible' });
   await emit({ type: 'tracking', on: false });
   await page.keyboard.press('Escape');
   await page.evaluate(() => (window.__delays.getTimesheet = 0));
@@ -1022,6 +1038,11 @@ await check('account and sign-in are small cards at the bottom right, clear of t
   assert.equal((await ui()).panel.keyboard, false);
   await emit({ type: 'cursor', x: 300, y: 500 }); // away from the card, clicks reach the apps
   await until(async () => (await ui()).clickThrough === true, 'click-through away from the card');
+  // Top up opens the wallet in the card's place, and "← Account" comes back.
+  await page.click('.panel-account [data-action="wallet"]');
+  await page.waitForSelector('.panel-wallet .panel-back', { state: 'visible' });
+  await page.click('.panel-wallet [data-back]');
+  await page.waitForSelector('.panel-account', { state: 'visible' });
   await page.click('.panel-account [data-action="close"]');
   assert.equal((await ui()).panel, null);
 });

@@ -155,6 +155,9 @@
   }
 
   let clearArmed = 0;
+  // A chat, the timesheet or the wallet opened from here docks in this card's place, with
+  // "← Account" to come back.
+  const toAccount = { label: 'Account', go: () => openAccountPanel() };
   function openAccountPanel() {
     const p = ui.openPanel({
       name: 'account',
@@ -172,7 +175,7 @@
             return;
           }
           ui.setChat(chat);
-          ui.openAsk({ showThread: true }); // you picked it to see it
+          ui.openAsk({ showThread: true, back: toAccount }); // you picked it to see it
           return;
         }
         if (target.dataset.delete) {
@@ -187,11 +190,11 @@
         if (action === 'close') ui.closePanel();
         else if (action === 'new') {
           ui.newChat();
-          ui.openAsk({});
+          ui.openAsk({ back: toAccount });
         } else if (action === 'wallet') {
-          if (window.GOATWallet) window.GOATWallet.open();
+          if (window.GOATWallet) window.GOATWallet.open({ back: toAccount });
         } else if (action === 'timesheet') {
-          if (window.GOATTimesheet) window.GOATTimesheet.open();
+          if (window.GOATTimesheet) window.GOATTimesheet.open({ back: toAccount });
         } else if (action === 'signout') {
           target.disabled = true;
           if (goat.signOut) await goat.signOut();

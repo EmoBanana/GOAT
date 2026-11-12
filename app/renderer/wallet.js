@@ -106,12 +106,14 @@
     p.querySelector('[data-action="topup"]').disabled = w.mode === 'off';
   }
 
-  async function openWallet() {
+  // opts.back: opened from the account card ("← Account").
+  async function openWallet(opts = {}) {
     const p = ui.openPanel({
       name: 'wallet',
       html: HTML,
       keyboard: false,
       dock: 'right',
+      back: opts.back,
       onclick: async (event) => {
         const button = event.target.closest('[data-action]');
         if (!button) return;
