@@ -147,7 +147,7 @@ export default function Page() {
             <div className="bento">
               <div className="panel panel-price">
                 <p className="price-tag">
-                  <span className="price">{rm(p.assistMyr)}</span>
+                  <span className={rm(p.assistMyr).length > 7 ? 'price price-long' : 'price'}>{rm(p.assistMyr)}</span>
                   <span className="price-unit">per assist · {usd(p.assistUsd)}</span>
                 </p>
                 <dl className="facts">

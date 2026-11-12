@@ -46,8 +46,10 @@ for (const b of [...manifest.builds].sort((x, y) => (ORDER[x.platform] ?? 9) - (
 
 // The prices the GOAT server charges, from the same settings it reads.
 const { loadConfig } = await import(pathToFileURL(path.join(root, 'server', 'src', 'config.js')));
+const { roundPrice } = await import(pathToFileURL(path.join(root, 'server', 'src', 'payments', 'money.js')));
 const config = loadConfig(process.env, root);
-const myr = (usd) => Math.round(usd * config.myrPerUsd * 100) / 100;
+// Rounded as the server rounds it, so a price under one sen stays RM 0.0042, not RM 0.
+const myr = (usd) => roundPrice(usd * config.myrPerUsd);
 
 // The Vercel CLI prints the blob's URL when an upload finishes.
 function blobUrlFrom(output) {
@@ -123,6 +125,6 @@ const data = {
 };
 fs.mkdirSync(path.join(web, 'data'), { recursive: true });
 fs.writeFileSync(path.join(web, 'data', 'downloads.json'), `${JSON.stringify(data, null, 2)}\n`);
-console.log(`[publish] Wrote web/data/downloads.json: GOAT ${data.version} for ${data.builds.map((b) => b.platform).join(' and ')}, RM ${data.pricing.assistMyr.toFixed(2)} an assist.`);
+console.log(`[publish] Wrote web/data/downloads.json: GOAT ${data.version} for ${data.builds.map((b) => b.platform).join(' and ')}, RM ${data.pricing.assistMyr} an assist (${data.pricing.payments}).`);
 for (const b of data.builds) console.log(`[publish] ${b.file}: ${b.url || '/download on the GOAT server (for Vercel, use --upload or --base-url)'}`);
 console.log('[publish] Now rebuild the site: npm run build');

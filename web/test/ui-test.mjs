@@ -9,7 +9,7 @@ import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { startTestServer } from '../../server/test/helpers/test-server.js';
-import { isLocal } from '../lib/format.js';
+import { isLocal, rm, usd } from '../lib/format.js';
 
 const { chromium } = createRequire(new URL('../../package.json', import.meta.url))('playwright');
 const web = fileURLToPath(new URL('..', import.meta.url));
@@ -73,6 +73,14 @@ const heroButtons = (page) => page.$$eval('.hero [data-download]', (as) => as.ma
 
 try {
   const { context, page, problems } = await open();
+
+  await check('prices under a sen keep their digits, as the app shows them', async () => {
+    assert.equal(rm(0.0042), 'RM 0.0042');
+    assert.equal(usd(0.001), 'US$0.001');
+    assert.equal(rm(0.42), 'RM 0.42');
+    assert.equal(rm(4.2), 'RM 4.20');
+    assert.equal(rm(0), 'RM 0.00');
+  });
 
   await check('the page loads its fonts, the cup logo, and has no errors', async () => {
     const families = await page.evaluate(() => [...document.fonts].filter((f) => f.status === 'loaded').map((f) => f.family));
@@ -139,7 +147,7 @@ try {
     }
     const arrows = await page.$$eval('.flow-arrow', (els) => els.map((el) => getComputedStyle(el).transform));
     assert.ok(arrows.some((t) => t === 'none' || /matrix\(1, /.test(t)), 'the payment arrows draw while on screen');
-    assert.equal(await page.locator('.price').innerText(), `RM ${data.pricing.assistMyr.toFixed(2)}`);
+    assert.equal(await page.locator('.price').innerText(), rm(data.pricing.assistMyr));
   });
 
   await check('each platform card downloads its own zip from this GOAT server', async () => {
@@ -196,6 +204,8 @@ try {
         }
         const sideways = await p.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
         assert.ok(sideways <= 0, `no sideways scrolling at ${viewport.width}px (${sideways}px over)`);
+        const tagOver = await p.evaluate(() => document.querySelector('.price-tag').getBoundingClientRect().right - document.querySelector('.panel-price').getBoundingClientRect().right);
+        assert.ok(tagOver < 0, `the price tag (${rm(data.pricing.assistMyr)}) fits its panel at ${viewport.width}px (${Math.round(tagOver)}px over)`);
         await p.screenshot({ path: shot(`10-away-${viewport.width}`), animations: 'disabled' });
         await p.close();
       }

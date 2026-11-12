@@ -674,6 +674,7 @@ kbd {
 /* Pricing and privacy: the price, the payment, and what GOAT leaves alone */
 .bento {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 24px;
 }
 .panel-price {
@@ -696,6 +697,11 @@ kbd {
   line-height: 0.9;
   letter-spacing: -0.03em;
   white-space: nowrap;
+}
+/* A price under one sen (RM 0.0042) is longer than RM 0.04; it gets smaller rather than wider than
+   its panel. */
+.price-long {
+  font-size: clamp(2rem, 2.9vw, 3.2rem);
 }
 .price-unit {
   display: block;
