@@ -296,11 +296,14 @@ test('on Base Sepolia the wallet lists only what went on chain, each with its ex
     { at: '2026-11-12T14:00:00.000Z', type: 'topup', amount: '1000000', transaction: h('a'), source: 'cdp-faucet' },
     { at: '2026-11-12T14:01:00.000Z', type: 'settled', amount: '1000', transaction: h('b') },
     { at: '2026-11-12T14:02:00.000Z', type: 'settled', amount: '100000', transaction: h('c') },
+    // a retry that found the first try had landed: paid, but no hash to link to
+    { at: '2026-11-12T14:03:00.000Z', type: 'settled', amount: '1000', transaction: '' },
   ];
   const rows = walletTransactions(history, { mode: 'x402', proPriceUsd: 0.1 });
   assert.deepEqual(
     rows.map((r) => [r.label, r.usd, r.link]),
     [
+      ['Assist', -0.001, null],
       ['Pro upgrade', -0.1, `https://sepolia.basescan.org/tx/${h('c')}`],
       ['Assist', -0.001, `https://sepolia.basescan.org/tx/${h('b')}`],
       ['Top-up', 1, `https://sepolia.basescan.org/tx/${h('a')}`],
