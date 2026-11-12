@@ -9,6 +9,7 @@ import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { startTestServer } from '../../server/test/helpers/test-server.js';
+import { isLocal } from '../lib/format.js';
 
 const { chromium } = createRequire(new URL('../../package.json', import.meta.url))('playwright');
 const web = fileURLToPath(new URL('..', import.meta.url));
@@ -150,6 +151,10 @@ try {
     }
   });
 
+  await check('served by the GOAT server itself, the page doesn’t say the server is down', async () => {
+    assert.equal(await page.locator('[data-server-note]').count(), 0);
+  });
+
   await check('no errors on the way down', async () => {
     assert.deepEqual(problems, []);
   });
@@ -169,6 +174,31 @@ try {
       assert.equal(labels.length, data.builds.length);
       for (const l of labels.filter((x) => unpublished.length && x.disabled)) assert.match(l.text, /not published yet/);
       assert.equal(labels.filter((l) => l.tag === 'A').length, data.builds.length - unpublished.length, 'only published builds are links');
+    } finally {
+      await away.close();
+    }
+  });
+
+  await check('on another host, builds for a server on your own computer say GOAT’s server isn’t online', async () => {
+    const away = await chromium.launch({ args: ['--host-resolver-rules=MAP goat.test 127.0.0.1'] });
+    try {
+      for (const viewport of [{ width: 1280, height: 800 }, { width: 375, height: 760 }]) {
+        const p = await away.newPage({ viewport });
+        await p.goto(srv.url.replace('127.0.0.1', 'goat.test'));
+        await p.waitForLoadState('networkidle');
+        const notes = await p.$$eval('[data-server-note]', (els) => els.map((el) => el.textContent));
+        if (!isLocal(data.builds[0].serverUrl)) {
+          assert.deepEqual(notes, [], 'builds for a hosted server need no note');
+        } else {
+          assert.equal(notes.length, 2, 'one by the hero buttons, one above the platform cards');
+          for (const text of notes) assert.match(text, /^GOAT’s server isn’t online right now\./);
+          assert.ok(await p.locator('.hero [data-server-note]').isVisible(), 'the hero note shows');
+        }
+        const sideways = await p.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+        assert.ok(sideways <= 0, `no sideways scrolling at ${viewport.width}px (${sideways}px over)`);
+        await p.screenshot({ path: shot(`10-away-${viewport.width}`), animations: 'disabled' });
+        await p.close();
+      }
     } finally {
       await away.close();
     }

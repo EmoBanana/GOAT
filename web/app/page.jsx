@@ -3,6 +3,7 @@ import { CursorDemo } from '@/components/CursorDemo';
 import { DownloadButton, DownloadButtons } from '@/components/DownloadButton';
 import { Keys } from '@/components/Keys';
 import { PaymentFlow } from '@/components/PaymentFlow';
+import { ServerNotice } from '@/components/ServerNotice';
 import data from '@/data/downloads.json';
 import { hostOf, isLocal, mb, rm, usd } from '@/lib/format';
 
@@ -85,6 +86,7 @@ export default function Page() {
                   GOAT sits beside your pointer in any app. Ask how to do something and it flies to each button in turn, telling you what to do there, step by step.
                 </p>
                 <DownloadButtons builds={builds} />
+                <ServerNotice serverUrl={serverUrl} />
                 <p className="meta">Free for Mac and Windows · {rm(p.assistMyr)} per assist</p>
               </div>
             </div>
@@ -202,6 +204,7 @@ export default function Page() {
         <section id="download" className="section" aria-labelledby="download-title">
           <div className="wrap">
             <SectionHead id="download-title" label="Download" title="Get GOAT for Mac or Windows." />
+            <ServerNotice serverUrl={serverUrl} className="server-note-section" />
             <div className="platforms">
               <PlatformCard
                 build={mac}

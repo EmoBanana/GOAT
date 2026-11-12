@@ -185,6 +185,31 @@ kbd {
   flex-wrap: wrap;
   gap: 12px;
 }
+/* Builds made for a server on the visitor's own computer can't answer anywhere else, so the page
+   says the server isn't online: flat and grey like a disabled button, with an unlit square. */
+.server-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: 34rem;
+  margin: 0;
+  padding: 10px 14px;
+  border: var(--rule);
+  background: var(--grey);
+  font: 500 0.8rem/1.45 var(--mono);
+  text-align: left;
+}
+.server-light {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  margin-top: 4px;
+  border: 2px solid var(--ink);
+  background: var(--paper);
+}
+.server-note-section {
+  margin: -8px 0 24px;
+}
 
 /* ---------- header ---------- */
 
