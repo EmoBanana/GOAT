@@ -9,7 +9,8 @@ const SCREEN = [T('Issues', 'link', 10, 100), T('Photos', 'link', 10, 140), T('C
 
 test('how-to questions are the ones GOAT can guide', () => {
   for (const q of ['how do I filter issues?', 'How to export the list', 'where do I find photos', "where's the export button", 'show me how to add a photo', 'walk me through closing an issue', 'what do I click to export?']) assert.match(q, HOW_TO, q);
-  for (const q of ['why do issues need a photo?', 'what is MCP?', 'summarise this deck', 'hi']) assert.doesNotMatch(q, HOW_TO, q);
+  for (const q of ['Can you show me how to search on Google?', 'please show me where the filters are', 'Hey GOAT, show me how to export', 'point me to the export button', 'where are the filters']) assert.match(q, HOW_TO, q);
+  for (const q of ['why do issues need a photo?', 'what is MCP?', 'summarise this deck', 'hi', 'can you summarise this deck?']) assert.doesNotMatch(q, HOW_TO, q);
 });
 
 test('controls are matched by name, loosely', () => {

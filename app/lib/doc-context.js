@@ -123,14 +123,19 @@ export function pageDocument(raw, app) {
 }
 
 // What to tell the user when GOAT can't read the document (shown once per app).
-export function documentHint(result) {
+// `purpose: 'point'` when the controls on a page were wanted (a guide), not the page's text.
+export function documentHint(result, { purpose = 'read' } = {}) {
   if (!result || !result.error) return '';
   const app = result.app || 'the app';
-  if (result.error === 'not_allowed') return `To let GOAT read the whole ${result.kind === 'deck' ? 'deck' : 'page'}, allow it to control ${app} in System Settings › Privacy & Security › Automation.`;
+  const point = purpose === 'point';
+  if (result.error === 'not_allowed') {
+    return `To let GOAT ${point ? `point at things in ${app}` : `read the whole ${result.kind === 'deck' ? 'deck' : 'page'}`}, allow it to control ${app} in System Settings › Privacy & Security › Automation.`;
+  }
   if (result.error === 'js_off') {
+    const what = point ? 'point at things on pages' : 'read whole pages';
     return app === 'Safari'
-      ? 'To let GOAT read whole pages in Safari, turn on Develop › Allow JavaScript from Apple Events.'
-      : `To let GOAT read whole pages in ${app}, turn on View › Developer › Allow JavaScript from Apple Events.`;
+      ? `To let GOAT ${what} in Safari, turn on Develop › Allow JavaScript from Apple Events.`
+      : `To let GOAT ${what} in ${app}, turn on View › Developer › Allow JavaScript from Apple Events.`;
   }
   return '';
 }

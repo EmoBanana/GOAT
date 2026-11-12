@@ -64,6 +64,12 @@ test('reading asks the app in front, and says how to fix a refusal', async () =>
   assert.deepEqual(off, { kind: 'page', app: 'Google Chrome', error: 'js_off' });
   assert.match(documentHint(off), /View › Developer › Allow JavaScript from Apple Events/);
   assert.match(documentHint({ kind: 'page', app: 'Safari', error: 'js_off' }), /Develop › Allow JavaScript from Apple Events/);
+  // For a guide, the same switch is what lets GOAT point at things on the page.
+  assert.equal(
+    documentHint({ kind: 'page', app: 'Microsoft Edge', error: 'js_off' }, { purpose: 'point' }),
+    'To let GOAT point at things on pages in Microsoft Edge, turn on View › Developer › Allow JavaScript from Apple Events.',
+  );
+  assert.match(documentHint({ kind: 'page', app: 'Microsoft Edge', error: 'not_allowed' }, { purpose: 'point' }), /^To let GOAT point at things in Microsoft Edge, allow it to control Microsoft Edge in System Settings/);
 
   const denied = await readDocument({
     app: 'Keynote',

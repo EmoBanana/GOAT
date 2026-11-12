@@ -241,6 +241,50 @@ try {
     }
   });
 
+  await check('"show me" opens the app or website it names, then the cursor shows the steps there', async () => {
+    const hooks = (fn, value) => app.evaluate((_electron, [name, v]) => globalThis.__goatTest[name](v), [fn, value]);
+    await setTargets([
+      { label: 'Search', role: 'combobox', x: 400, y: 380, w: 560, h: 44 },
+      { label: 'Google Search', role: 'button', x: 520, y: 460, w: 140, h: 36 },
+    ]);
+    await hooks('setFakeWindow', 'Antigravity IDE|main.js — goat');
+    await hooks('setFakeOpen', 'Microsoft Edge|Google|https://www.google.com/');
+    const before = ollama.state.reply;
+    const plan = { possible: true, intro: "Here's how to search on Google.", steps: [{ target: 'Search', say: 'Click the search box and type what you want.' }, { target: 'Google Search', say: 'Then click Google Search.' }] };
+    ollama.state.reply = (body) => (body.format ? JSON.stringify(plan) : before(body));
+    await page.evaluate(() => {
+      window.__showSteps = [];
+      window.GOATUI.onEvent('step', (s) => window.__showSteps.push(s.text));
+    });
+    try {
+      ollama.calls.length = 0;
+      await askThroughMain('can you show me how to search on google?');
+      await until(() => page.evaluate(() => window.GOATUI.state().guide?.index === 0 && window.GOATUI.state().guide.landed), 'the guide on Google');
+      assert.deepEqual(await app.evaluate(() => globalThis.__goatTest.opened()), ['https://www.google.com/']);
+      assert.ok((await page.evaluate(() => window.__showSteps)).includes('Opening Google'), 'the readout says what it opened');
+      const planned = ollama.chats().find((c) => c.body.format);
+      assert.match(planned.body.messages.at(-1).content, /^App: Microsoft Edge · Window: Google/, 'planned on the page it opened');
+      assert.ok(planned.body.messages.at(-1).content.includes('- "Search" combobox'));
+      const tip = await tipAt();
+      assert.ok(Math.abs(tip.x - 680) <= 1 && Math.abs(tip.y - 402) <= 1, `on the search box: ${JSON.stringify(tip)}`);
+      await page.screenshot({ path: shot('electron-show-me.png') });
+      await page.keyboard.press('Escape');
+      // Asking how (not to be shown) with the IDE in front opens nothing and answers in words.
+      await hooks('setFakeWindow', 'Antigravity IDE|main.js — goat');
+      ollama.calls.length = 0;
+      await askThroughMain('how do I search on google?');
+      await until(() => page.evaluate(() => !document.getElementById('goat-bubble').hidden && !window.GOATUI.state().guide), 'the answer in words');
+      assert.deepEqual(await app.evaluate(() => globalThis.__goatTest.opened()), ['https://www.google.com/'], 'nothing else opened');
+      assert.ok(ollama.chats().every((c) => !c.body.format), 'not planned on the IDE');
+      await page.keyboard.press('Escape');
+    } finally {
+      ollama.state.reply = before;
+      await setTargets(null);
+      await hooks('setFakeOpen', '');
+      await hooks('setFakeWindow', env.GOAT_FAKE_WINDOW);
+    }
+  });
+
   await check('a recorded guide finds its control again after the screen changes, as at another resolution', async () => {
     const exportAt = (x, y) => [{ label: 'Export', role: 'button', x, y, w: 100, h: 30 }];
     await setTargets(exportAt(400, 100));

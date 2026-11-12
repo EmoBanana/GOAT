@@ -3,8 +3,9 @@
 // (labels and positions read by the app). Steps name controls by label; the app finds each one on
 // screen right before its step, so resolution and window size don't matter. The first step must
 // be a control that is on screen now, or there's no guide (GOAT answers in words instead).
+// A polite "can you" or "please" in front is fine ("can you show me how to search on Google?").
 export const HOW_TO =
-  /^\s*(how (do|can|should|would) (i|we|you)|how to|where (do|can) i|where is|where's|show me|guide me|walk me through|take me|help me (find|get|do|set)|what do i (click|press))\b/i;
+  /^\s*(?:(?:hey\s+)?goat[,!]?\s+)?(?:(?:can|could|would|will)\s+you\s+|please\s+)?(how (do|can|should|would) (i|we|you)|how to|where (do|can) i|where is|where are|where's|show me|guide me|walk me through|take me|point (me )?(to|at)|help me (find|get|do|set)|what do i (click|press))\b/i;
 export const MAX_PLAN_STEPS = 6;
 const MAX_LISTED = 120;
 
