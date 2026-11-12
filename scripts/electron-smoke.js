@@ -383,6 +383,14 @@ try {
       assert.equal(approved.length, 1);
       assert.equal(JSON.parse(fs.readFileSync(path.join(srv.dataDir, 'timesheets', 'e2e-tester', approved[0]), 'utf8')).activities.length, 2);
       await page.click('#goat-panel [data-action="close"]'); // not the Close of the guide bubble above, now hidden
+      // The account card opens today's timesheet too, through main, without tracking on and off.
+      await app.evaluate(() => globalThis.__goatTest.openAccount());
+      await page.waitForSelector('.panel-account [data-action="timesheet"]', { state: 'visible' });
+      await page.click('[data-action="timesheet"]');
+      await page.waitForSelector('.panel-timesheet .ts-act', { state: 'visible' });
+      assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('.ts-what')].map((e) => e.textContent)), acts.map(([, what]) => what));
+      assert.equal(await page.locator('.ts-status').innerText(), 'Approved');
+      await page.click('#goat-panel [data-action="close"]');
     } finally {
       ollama.state.reply = before;
       await app.evaluate(() => globalThis.__goatTest.setFakeWindow('Google Chrome|Forma Build - Issues'));

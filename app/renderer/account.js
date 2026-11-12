@@ -76,6 +76,8 @@
     '<button type="button" class="x" data-action="close" aria-label="Close">×</button></div>' +
     '<div class="acct-wallet"><div><div class="acct-balance">RM –</div><div class="acct-pro"></div></div>' +
     '<span class="spacer"></span><button type="button" data-action="wallet">Top up</button></div>' +
+    '<div class="acct-sheet"><div><div class="acct-sheet-title">Today\'s timesheet</div><div class="acct-sheet-sub"></div></div>' +
+    '<span class="spacer"></span><button type="button" data-action="timesheet">Open</button></div>' +
     '<div class="acct-chats-head"><span class="card-label">Chats</span><span class="spacer"></span>' +
     '<button type="button" class="link" data-action="new">New chat</button></div>' +
     '<ol class="acct-chats"></ol>' +
@@ -105,6 +107,14 @@
     p.querySelector('.acct-balance').textContent = w.mode === 'off' ? 'Free' : rm(w.balanceMyr);
     const until = w.proUntil ? new Date(w.proUntil).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '';
     p.querySelector('.acct-pro').textContent = w.pro ? `Pro until ${until}` : w.mode === 'off' ? '' : `${price(w.priceMyr)} per assist`;
+  }
+
+  // Today's timesheet is a click away, tracking or not.
+  function renderSheet(p) {
+    const on = Boolean(window.GOATTimesheet && window.GOATTimesheet.tracking());
+    const sub = p.querySelector('.acct-sheet-sub');
+    sub.textContent = on ? 'Tracking now' : `${ui.hotkey('track')} starts tracking`;
+    sub.classList.toggle('live', on);
   }
 
   function renderChats(p, chats) {
@@ -180,6 +190,8 @@
           ui.openAsk({});
         } else if (action === 'wallet') {
           if (window.GOATWallet) window.GOATWallet.open();
+        } else if (action === 'timesheet') {
+          if (window.GOATTimesheet) window.GOATTimesheet.open();
         } else if (action === 'signout') {
           target.disabled = true;
           if (goat.signOut) await goat.signOut();
@@ -204,6 +216,7 @@
       },
     });
     renderWho(p);
+    renderSheet(p);
     renderChats(p, []);
     p.querySelector('.acct-empty').hidden = true;
     loadChats(p);
@@ -239,6 +252,9 @@
   }
 
   ui.onEvent('account', (msg) => update(msg, true));
+  ui.onEvent('tracking', () => {
+    if (isOpen('account')) renderSheet(document.getElementById('goat-panel'));
+  });
   ui.onEvent('open-welcome', (msg) => {
     update(msg);
     if (!isOpen('welcome')) openWelcome();

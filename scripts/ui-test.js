@@ -912,6 +912,38 @@ await check('account: delete a chat, clear all (two clicks), and sign out', asyn
   await page.keyboard.press('Escape');
 });
 
+await check("account: today's timesheet opens from the account card, tracking or not", async () => {
+  const at = (h, m) => new Date(2026, 10, 12, h, m).toISOString();
+  const sheet = {
+    user: 'ui-tester',
+    date: '2026-11-12',
+    entries: [{ code: 'GOAT', name: 'GOAT hackathon', minutes: 30, hours: 0.5, apps: ['Google Chrome'] }],
+    totalMinutes: 30,
+    unassignedMinutes: 0,
+    idleMinutes: 0,
+    approved: false,
+    activities: [{ key: 'a', start: at(9, 2), end: at(9, 32), minutes: 30, app: 'Google Chrome', site: 'canva.com', titles: ['GOAT pitch'], guides: [], code: 'GOAT', name: 'GOAT hackathon', summary: 'Worked on the GOAT pitch presentation in Canva.', described: true }],
+  };
+  await page.evaluate(() => (window.__calls.length = 0));
+  await setReply('getTimesheet', sheet);
+  await page.evaluate(() => (window.__delays.getTimesheet = 300)); // the model is writing the lines
+  await emit({ type: 'open-account', signedIn: true, account: ACCOUNT, userId: '0xabab' });
+  await page.waitForSelector('.panel-account .acct-sheet', { state: 'visible' });
+  assert.match(await page.locator('.acct-sheet').innerText(), /Today's timesheet\s*Ctrl\+Option\+T starts tracking\s*Open/);
+  await emit({ type: 'tracking', on: true });
+  await until(async () => (await page.locator('.acct-sheet-sub').innerText()) === 'Tracking now', 'the live tracking line');
+  await shot('ui-18b-account-timesheet');
+  await page.click('[data-action="timesheet"]');
+  await page.waitForSelector('.panel-timesheet .ts-loading', { state: 'visible' });
+  await page.waitForSelector('.panel-timesheet .ts-act', { state: 'visible' });
+  assert.deepEqual((await calls('getTimesheet'))[0].args, [], "today's, without stopping tracking");
+  assert.match(await page.locator('.ts-act').innerText(), /Worked on the GOAT pitch presentation in Canva\./);
+  assert.equal(await page.evaluate(() => document.getElementById('goat-cursor').classList.contains('tracking')), true, 'still tracking');
+  await emit({ type: 'tracking', on: false });
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => (window.__delays.getTimesheet = 0));
+});
+
 await check('panels move: drag one by an empty spot and it opens there next time', async () => {
   await page.evaluate(() => localStorage.clear());
   await emit({ type: 'open-ask', context: { app: 'Keynote', title: 'Deck.key' } });

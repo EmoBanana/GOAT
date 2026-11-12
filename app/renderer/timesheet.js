@@ -169,4 +169,18 @@
     if (!reply || reply.error) return showError(p, (reply && reply.message) || 'Export failed.');
     ui.toast('Opened the CSV in your browser.');
   }
+
+  // Today's timesheet without stopping tracking (the account card opens it): the same panel,
+  // open at once and filled in when the day's lines are written.
+  async function openToday() {
+    ui.emit('open-timesheet', { loading: true });
+    let t = null;
+    try {
+      t = goat.getTimesheet ? await goat.getTimesheet() : null;
+    } catch (err) {
+      t = { error: 'ipc_error', message: String((err && err.message) || err) };
+    }
+    ui.emit('open-timesheet', { timesheet: t || { error: 'unavailable', message: "Couldn't load the timesheet." } });
+  }
+  window.GOATTimesheet = { open: openToday, tracking: () => ui.cursorEl.classList.contains('tracking') };
 })();
