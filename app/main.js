@@ -9,6 +9,11 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const isMac = process.platform === 'darwin';
 const hotkey = (key) => `${isMac ? 'Ctrl+Option' : 'Ctrl+Alt'}+${key}`;
 const accelerator = (key) => `Control+Alt+${key}`;
+// 'modal-panel' sits above every app window (fullscreen ones too) but below the menu bar and
+// system UI such as the Screenshot tool (layer 24). 'screen-saver' covers everything, but it
+// sits on top of the screenshot UI and breaks snipping.
+const LEVELS = ['floating', 'torn-off-menu', 'modal-panel', 'main-menu', 'status', 'pop-up-menu', 'screen-saver'];
+const windowLevel = LEVELS.includes(process.env.GOAT_WINDOW_LEVEL) ? process.env.GOAT_WINDOW_LEVEL : 'modal-panel';
 
 if (process.env.GOAT_USER_DATA) app.setPath('userData', process.env.GOAT_USER_DATA);
 
@@ -22,6 +27,7 @@ let cursorTimer = null;
 let lastCursor = null;
 let askContext = {};
 let askOpening = false;
+let streamPaused = false; // test hooks drive the cursor instead
 
 const log = (...args) => console.log('[goat]', ...args);
 
@@ -68,7 +74,7 @@ function createWindow() {
       spellcheck: false,
     },
   });
-  win.setAlwaysOnTop(true, 'screen-saver');
+  win.setAlwaysOnTop(true, windowLevel);
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   win.setIgnoreMouseEvents(true, { forward: true });
 
@@ -94,7 +100,7 @@ function createWindow() {
 function startCursorStream() {
   clearInterval(cursorTimer);
   cursorTimer = setInterval(() => {
-    if (!win || win.isDestroyed()) return;
+    if (!win || win.isDestroyed() || streamPaused) return;
     const p = screen.getCursorScreenPoint();
     const b = win.getBounds();
     const point = { x: p.x - b.x, y: p.y - b.y };
@@ -194,7 +200,12 @@ if (!app.requestSingleInstanceLock()) {
       globalThis.__goatTest = {
         openAsk: () => openAsk('test'),
         askContext: () => askContext,
-        windowState: () => ({ visible: win.isVisible(), onTop: win.isAlwaysOnTop(), bounds: win.getBounds() }),
+        windowState: () => ({ visible: win.isVisible(), onTop: win.isAlwaysOnTop(), bounds: win.getBounds(), level: windowLevel }),
+        // Stop streaming the real mouse and send a fake system cursor position instead.
+        sendCursor: (x, y) => {
+          streamPaused = true;
+          send({ type: 'cursor', x, y });
+        },
       };
     }
   });

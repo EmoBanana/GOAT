@@ -1,5 +1,5 @@
 // npm start: the server (unless one is already answering) and then the overlay.
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -18,6 +18,13 @@ const env = { ...process.env, GOAT_SERVER_URL: serverUrl };
 delete env.ELECTRON_RUN_AS_NODE;
 
 const children = [];
+
+try {
+  const build = execFileSync('git', ['log', '-1', '--format=%h %s'], { cwd: root, encoding: 'utf8' }).trim();
+  console.log(`[dev] GOAT build ${build}`);
+} catch {
+  // not a git checkout
+}
 let stopping = false;
 
 function pipe(child, tag) {

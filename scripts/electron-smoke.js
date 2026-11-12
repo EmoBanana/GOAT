@@ -71,6 +71,7 @@ try {
       return w.visible && w;
     }, 'the window to show');
     assert.equal(s.onTop, true);
+    assert.equal(s.level, 'modal-panel', 'below the macOS Screenshot UI');
     assert.ok(s.bounds.width > 0 && s.bounds.height > 0);
   });
 
@@ -95,6 +96,25 @@ try {
     assert.match(chat.body.messages[1].content, /App: Google Chrome/);
     assert.match(chat.body.messages[1].content, /Window: Forma Build - Issues/);
     await page.screenshot({ path: path.join(artifacts, 'electron-llm.png') });
+  });
+
+  await check('the answer bubble follows the cursor in the real app', async () => {
+    await app.evaluate(() => globalThis.__goatTest.sendCursor(400, 300));
+    const placed = () =>
+      page.evaluate(() => {
+        const b = document.getElementById('goat-bubble');
+        return { x: parseFloat(b.style.left), y: parseFloat(b.style.top), hidden: b.hidden };
+      });
+    // Blue tip settles at +14, +16; the bubble sits +24, +22 from the tip.
+    await until(async () => {
+      const b = await placed();
+      return !b.hidden && Math.abs(b.x - 438) <= 1 && Math.abs(b.y - 338) <= 1;
+    }, 'the bubble to reach (438, 338)');
+    await app.evaluate(() => globalThis.__goatTest.sendCursor(700, 500));
+    await until(async () => {
+      const b = await placed();
+      return Math.abs(b.x - 738) <= 1 && Math.abs(b.y - 538) <= 1;
+    }, 'the bubble to follow to (738, 538)');
   });
 
   await check('no page errors', async () => {
