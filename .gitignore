@@ -4,3 +4,4 @@ data/
 test-artifacts/
 Claude outputs/
 .DS_Store
+dist/

@@ -514,7 +514,7 @@
     const meta = reply.model
       ? [
           reply.image && 'read the highlighted area',
-          `${reply.model} · running on this laptop`,
+          `${reply.model} · ${reply.where || 'running on this laptop'}`,
           reply.thought && 'thought it through',
           reply.searched && reply.searched.length && 'searched the web',
         ]

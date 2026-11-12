@@ -6,6 +6,7 @@ import { captureRegion } from './lib/capture.js';
 import { startHoldKeys } from './lib/hold-keys.js';
 import { validRegion } from './lib/region.js';
 import { createApi } from './lib/api.js';
+import { readBuildInfo, resolveServerUrl, whereItRuns } from './lib/build-info.js';
 import { getUserId } from './lib/identity.js';
 import { buildGuide, createRecorder } from './lib/recorder.js';
 import { createPayer } from './lib/wallet.js';
@@ -23,10 +24,13 @@ const windowLevel = LEVELS.includes(process.env.GOAT_WINDOW_LEVEL) ? process.env
 
 if (process.env.GOAT_USER_DATA) app.setPath('userData', process.env.GOAT_USER_DATA);
 
-const serverUrl = process.env.GOAT_SERVER_URL || 'http://127.0.0.1:8402';
+// A packaged GOAT talks to the server it was built for (scripts/package.js); GOAT_SERVER_URL wins.
+const build = readBuildInfo(app.getAppPath());
+const serverUrl = resolveServerUrl({ env: process.env, build });
+const unreachableHint = app.isPackaged ? 'Check that it is running and that this Mac can reach it.' : 'Start it with: npm start';
 const userId = getUserId();
 // Replaced by a paying client once the wallet is ready (see setUpWallet).
-let api = createApi({ baseUrl: serverUrl, userId });
+let api = createApi({ baseUrl: serverUrl, userId, unreachableHint });
 let payer = { kind: 'none', address: null };
 const recorder = createRecorder();
 let lastRecording = null;
@@ -288,7 +292,7 @@ async function setUpWallet() {
     console.warn(`[goat] No wallet: ${err.message}`);
     payer = { kind: 'none', address: null, fetch: globalThis.fetch };
   }
-  api = createApi({ baseUrl: serverUrl, userId, walletAddress: payer.address, fetchImpl: payer.fetch });
+  api = createApi({ baseUrl: serverUrl, userId, walletAddress: payer.address, fetchImpl: payer.fetch, unreachableHint });
   const wallet = await api.wallet();
   log(`Wallet: ${payer.kind}${wallet.balanceMyr != null ? `, RM ${wallet.balanceMyr.toFixed(2)}` : ''}${wallet.mode ? ` (${wallet.mode})` : ''}`);
 }
@@ -352,6 +356,7 @@ function registerIpc() {
     const context = region ? { ...askContext, region } : screenShot ? { ...askContext, region: screenShot.region } : askContext;
     const reply = await api.assist({ question, context, image, screen: screenShot?.image, voice: payload?.voice === true });
     log(reply.error ? `ask failed: ${reply.error}` : `ask -> ${reply.source}${reply.guide ? ` (${reply.guide.id})` : ''} in ${reply.latencyMs} ms`);
+    if (!reply.error) reply.where = whereItRuns(serverUrl); // "running on this laptop" only when it does
     return reply;
   });
   ipcMain.on('goat:click-through', (event, on) => {
@@ -438,6 +443,7 @@ if (!app.requestSingleInstanceLock()) {
         tracking: () => ({ tracking: tracker.tracking, queued: tracker.queued }),
         wallet: () => api.wallet(),
         payer: () => ({ kind: payer.kind, address: payer.address }),
+        info: () => ({ serverUrl, packaged: app.isPackaged, version: app.getVersion(), build }),
         setFakeWindow: (value) => {
           process.env.GOAT_FAKE_WINDOW = value;
         },

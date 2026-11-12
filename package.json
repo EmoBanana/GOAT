@@ -12,9 +12,11 @@
     "start": "node scripts/dev.js",
     "server": "node server/src/index.js",
     "app": "electron .",
-    "test": "node --test \"server/test/**/*.test.js\" \"app/test/**/*.test.js\"",
+    "test": "node --test \"server/test/**/*.test.js\" \"app/test/**/*.test.js\" \"scripts/test/**/*.test.js\"",
     "test:ui": "node scripts/ui-test.js",
     "test:electron": "node scripts/electron-smoke.js",
+    "test:package": "node scripts/package-smoke.js",
+    "package": "node scripts/package.js",
     "smoke": "node scripts/smoke-ollama.js"
   },
   "dependencies": {
@@ -30,6 +32,7 @@
     "viem": "^2.57.19"
   },
   "devDependencies": {
+    "@electron/packager": "20.3.0",
     "playwright": "^1.65.0"
   }
 }

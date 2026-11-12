@@ -15,6 +15,9 @@ import { startTestServer } from '../server/test/helpers/test-server.js';
 const root = fileURLToPath(new URL('..', import.meta.url));
 const artifacts = path.join(root, 'test-artifacts');
 fs.mkdirSync(artifacts, { recursive: true });
+// GOAT_E2E_APP=dist/mac-arm64/GOAT.app runs these checks against the packaged app (npm run test:package).
+const packagedApp = process.env.GOAT_E2E_APP ? path.resolve(process.env.GOAT_E2E_APP) : null;
+const shot = (name) => path.join(artifacts, packagedApp ? name.replace(/^electron-/, 'packaged-') : name);
 
 const ollama = await startMockOllama({ reply: () => 'Photos are the evidence for every issue.' });
 // Payments on: every ask in this run is paid with x402 through the app's wallet abstraction.
@@ -61,8 +64,8 @@ try {
   // Fake media devices, so nothing asks for the microphone. The voice check below plays a spoken
   // question into the page itself (Electron's fake audio file input stays silent; see Gotchas).
   app = await electron.launch({
-    executablePath: electronPath,
-    args: [root, '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--autoplay-policy=no-user-gesture-required'],
+    executablePath: packagedApp ? path.join(packagedApp, 'Contents', 'MacOS', 'GOAT') : electronPath,
+    args: [...(packagedApp ? [] : [root]), '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--autoplay-policy=no-user-gesture-required'],
     env: { ...env, GOAT_FAKE_MEDIA: '1', GOAT_PTT: 'off' }, // the hold helper needs a real keyboard
     timeout: 30_000,
   });
@@ -88,6 +91,13 @@ try {
     assert.ok(s.bounds.width > 0 && s.bounds.height > 0);
   });
 
+  await check(`the ${packagedApp ? 'packaged' : 'dev'} app talks to the server it's given`, async () => {
+    const info = await app.evaluate(() => globalThis.__goatTest.info());
+    assert.equal(info.packaged, Boolean(packagedApp));
+    assert.equal(info.serverUrl, srv.url, 'GOAT_SERVER_URL beats the URL baked into a build');
+    if (packagedApp) assert.match(info.build.serverUrl, /^https?:\/\//, 'the build names the server it was made for');
+  });
+
   await check('a guide reply comes back through main and plays', async () => {
     await askThroughMain('how do I log an issue?');
     await until(() => page.evaluate(() => window.GOATUI.state().guide?.landed === true), 'the cursor to land on step 1');
@@ -95,7 +105,7 @@ try {
     assert.match(text, /Step 1 of 7/);
     assert.match(text, /Open Issues from the left menu\./);
     assert.deepEqual(await app.evaluate(() => globalThis.__goatTest.askContext()), { app: 'Google Chrome', title: 'Forma Build - Issues', url: '' });
-    await page.screenshot({ path: path.join(artifacts, 'electron-guide.png') });
+    await page.screenshot({ path: shot('electron-guide.png') });
     await page.keyboard.press('Escape');
     await until(() => page.evaluate(() => window.GOATUI.state().guide === null), 'the guide to stop');
   });
@@ -108,7 +118,7 @@ try {
     const [chat] = ollama.chats();
     assert.match(chat.body.messages.at(-1).content, /App: Google Chrome/);
     assert.match(chat.body.messages.at(-1).content, /Window: Forma Build - Issues/);
-    await page.screenshot({ path: path.join(artifacts, 'electron-llm.png') });
+    await page.screenshot({ path: shot('electron-llm.png') });
   });
 
   await check('the answer bubble follows the cursor in the real app', async () => {
@@ -211,7 +221,7 @@ try {
     await until(() => page.evaluate(() => /You're on GOAT Pro until/.test(document.getElementById('goat-toasts').innerText)), 'the Pro upgrade');
     const me = await srv.request('GET', '/api/me', { user: 'e2e-tester' });
     assert.equal(me.body.tier, 'pro');
-    await page.screenshot({ path: path.join(artifacts, 'electron-wallet.png') });
+    await page.screenshot({ path: shot('electron-wallet.png') });
     await page.click('[data-action="close"]');
   });
 
@@ -262,7 +272,7 @@ try {
     assert.ok(ask, 'the question went to Gemma with the screen around the pointer');
     assert.equal(ask.body.messages.at(-1).images.length, 1);
     assert.match(ask.body.messages[0].content, /spoken aloud/);
-    await page.screenshot({ path: path.join(artifacts, 'electron-voice.png') });
+    await page.screenshot({ path: shot('electron-voice.png') });
   });
 
   await check('GOAT-compatible: a drafted guide gets its positions from the recorder and plays when asked', async () => {

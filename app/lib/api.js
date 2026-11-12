@@ -3,7 +3,8 @@ import { decodePaymentResponseHeader } from '@x402/fetch';
 // HTTP client for the GOAT server, used only by the main process.
 // Never throws: failures come back as { error, message } so they cross IPC intact.
 // fetchImpl is the x402 paying fetch; walletAddress (never a key) links the wallet to the user.
-export function createApi({ baseUrl, userId, walletAddress = null, fetchImpl = globalThis.fetch, timeoutMs = 130_000 }) {
+// unreachableHint follows "Can't reach the GOAT server": a packaged app has no npm start.
+export function createApi({ baseUrl, userId, walletAddress = null, fetchImpl = globalThis.fetch, timeoutMs = 130_000, unreachableHint = 'Start it with: npm start' }) {
   async function request(method, path, body, timeout = timeoutMs) {
     let res;
     try {
@@ -22,7 +23,7 @@ export function createApi({ baseUrl, userId, walletAddress = null, fetchImpl = g
       if (err?.name === 'TimeoutError') {
         return { error: 'server_timeout', message: 'The GOAT server took too long to answer. Try again in a moment.' };
       }
-      return { error: 'server_unreachable', message: `Can't reach the GOAT server at ${baseUrl}. Start it with: npm start` };
+      return { error: 'server_unreachable', message: `Can't reach the GOAT server at ${baseUrl}. ${unreachableHint}` };
     }
     let data = null;
     try {
