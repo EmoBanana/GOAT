@@ -51,6 +51,7 @@ export function loadConfig(env = process.env, root = ROOT) {
     think: ['auto', 'off', 'always'].includes(str(env.GOAT_THINK, 'auto')) ? str(env.GOAT_THINK, 'auto') : 'auto',
     mcpConfig: path.resolve(root, str(env.GOAT_MCP_CONFIG, 'config/mcp.json')),
     payments: str(env.GOAT_PAYMENTS, 'x402-local'),
+    projectsFile: path.resolve(root, str(env.GOAT_PROJECTS_FILE, 'config/projects.json')),
     guidesDir: path.resolve(root, str(env.GOAT_GUIDES_DIR, 'guides')),
     docsDir: path.resolve(root, str(env.GOAT_DOCS_DIR, 'docs')),
     dataDir: path.resolve(root, str(env.GOAT_DATA_DIR, 'data')),

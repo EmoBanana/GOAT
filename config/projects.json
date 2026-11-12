@@ -1,0 +1,12 @@
+{
+  "trackedApps": ["Revit", "AutoCAD", "acad", "Navisworks", "Roamer", "Bluebeam Revu", "Microsoft Excel", "EXCEL",
+    "Microsoft PowerPoint", "POWERPNT", "Keynote", "Preview", "Google Chrome", "chrome", "Microsoft Edge", "msedge",
+    "Safari", "Arc", "Firefox"],
+  "browserApps": ["Google Chrome", "chrome", "Microsoft Edge", "msedge", "Safari", "Arc", "Firefox"],
+  "iso19650": true,
+  "projects": [
+    { "code": "ALPHA", "name": "Sample: Alpha Viaduct", "patterns": ["\\bALPHA\\b", "\\bALP-"] },
+    { "code": "BRAVO", "name": "Sample: Bravo Station", "patterns": ["\\bBRAVO\\b", "\\bBRV-"] },
+    { "code": "GOAT", "name": "GOAT hackathon", "patterns": ["\\bGOAT\\b", "hackathon"] }
+  ]
+}

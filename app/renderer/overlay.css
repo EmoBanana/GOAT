@@ -256,3 +256,30 @@ body {
 }
 .hl-rect.locked { border-style: dashed; box-shadow: none; }
 .ask-context.scoped { color: var(--blue); font-weight: 600; }
+
+/* Timesheet: red dot by the cursor while tracking, and the day's table. */
+.cursor .track-dot {
+  display: none;
+  position: absolute;
+  left: 13px;
+  top: -6px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #ef4444;
+  box-shadow: 0 0 0 2px #fff, 0 1px 3px rgba(0, 0, 0, 0.4);
+  animation: goat-blink 1.6s ease-in-out infinite;
+}
+.cursor.tracking .track-dot { display: block; }
+.panel-timesheet { top: 14%; width: min(620px, calc(100vw - 48px)); }
+.ts-table { width: 100%; margin-top: 12px; border-collapse: collapse; font-size: 13.5px; }
+.ts-table th { padding: 6px 8px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 12px; font-weight: 600; text-align: left; }
+.ts-table td { padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.ts-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ts-table tr.total td { border-bottom: 0; font-weight: 700; }
+.ts-code { display: inline-block; margin-right: 8px; padding: 1px 6px; border-radius: 6px; background: var(--blue-soft); color: var(--blue-dark); font-size: 11.5px; font-weight: 700; }
+.ts-apps { color: var(--muted); font-size: 12px; }
+.ts-note { margin-top: 8px; color: var(--muted); font-size: 12px; }
+.ts-empty { margin: 16px 0 6px; color: var(--muted); }
+.ts-status { color: var(--muted); font-size: 12.5px; font-weight: 600; }
+.ts-status.approved { color: #15803d; }

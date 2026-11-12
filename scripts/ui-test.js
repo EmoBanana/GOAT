@@ -468,6 +468,62 @@ await check('highlight: a tiny drag or a click is not a highlight, and Esc cance
   assert.equal(plain.args[1], null, 'a plain ask carries no region');
 });
 
+await check('tracking: a red dot rides with the cursor while tracking is on', async () => {
+  const dotShown = () => page.evaluate(() => getComputedStyle(document.querySelector('#goat-cursor .track-dot')).display === 'block');
+  assert.equal(await dotShown(), false);
+  await emit({ type: 'tracking', on: true });
+  assert.equal(await dotShown(), true);
+  await shot('ui-10-tracking-dot');
+  await emit({ type: 'tracking', on: false });
+  assert.equal(await dotShown(), false);
+});
+
+await check("timesheet: today's projects, Approve and Export CSV", async () => {
+  const sheet = {
+    user: 'ui-tester',
+    date: '2026-11-12',
+    entries: [
+      { code: 'ALPHA', name: 'Sample: Alpha Viaduct', minutes: 75, hours: 1.25, apps: ['Google Chrome', 'Revit'] },
+      { code: 'GOAT', name: 'GOAT hackathon', minutes: 30, hours: 0.5, apps: ['Keynote'] },
+    ],
+    totalMinutes: 111,
+    unassignedMinutes: 6,
+    idleMinutes: 12,
+    approved: false,
+  };
+  await setReply('approveTimesheet', { ...sheet, approved: { at: '2026-11-12T09:00:00Z' } });
+  await setReply('exportTimesheetCsv', { ok: true, url: 'http://127.0.0.1:8402/api/timesheet.csv?date=2026-11-12&user=ui-tester' });
+  await page.evaluate(() => (window.__calls.length = 0));
+  await emit({ type: 'open-timesheet', timesheet: sheet });
+  await page.waitForSelector('.ts-table', { state: 'visible' });
+  const rows = await page.evaluate(() => [...document.querySelectorAll('.ts-table tbody tr')].map((tr) => [...tr.cells].map((c) => c.textContent)));
+  assert.deepEqual(rows, [
+    ['ALPHASample: Alpha Viaduct', '1.25', 'Google Chrome, Revit'],
+    ['GOATGOAT hackathon', '0.50', 'Keynote'],
+    ['Unassigned', '0.10', ''],
+    ['Total', '1.85', ''],
+  ]);
+  assert.equal(await page.locator('.ts-note').innerText(), '0.20 h idle, not counted.');
+  assert.equal(await page.locator('.ts-status').innerText(), 'Draft');
+  await shot('ui-11-timesheet');
+  await page.click('[data-action="approve"]');
+  await until(async () => (await page.locator('.ts-status').innerText()) === 'Approved', 'the approved status');
+  assert.deepEqual((await calls('approveTimesheet'))[0].args, ['2026-11-12']);
+  assert.equal(await page.locator('[data-action="approve"]').innerText(), 'Approve again');
+  await page.click('[data-action="csv"]');
+  assert.deepEqual((await until(async () => {
+    const c = await calls('exportTimesheetCsv');
+    return c.length && c;
+  }, 'the CSV export'))[0].args, ['2026-11-12']);
+  await page.click('[data-action="close"]');
+  assert.equal((await ui()).panel, null);
+  await emit({ type: 'open-timesheet', timesheet: { ...sheet, entries: [], unassignedMinutes: 0, totalMinutes: 0, idleMinutes: 0 } });
+  await page.waitForSelector('.ts-empty', { state: 'visible' });
+  assert.match(await page.locator('.ts-empty').innerText(), /Nothing tracked yet today/);
+  assert.equal(await page.locator('[data-action="approve"]').isDisabled(), true);
+  await page.keyboard.press('Escape');
+});
+
 await check('no page errors or CSP violations', async () => {
   assert.deepEqual(pageErrors, []);
   assert.deepEqual(await page.evaluate(() => window.__csp), []);

@@ -20,3 +20,16 @@ test('the sampler returns null when osascript fails or off macOS', async () => {
   const ok = await sampleActiveWindow({ env: {}, platform: 'darwin', run: async () => '{"app":"Safari","title":"Issues","pid":9}' });
   assert.deepEqual(ok, { app: 'Safari', title: 'Issues', pid: 9 });
 });
+
+test('with an allowlist, titles of other apps are blanked and the list reaches the sampler', async () => {
+  let argsSeen = null;
+  const run = async (_cmd, args) => {
+    argsSeen = args;
+    return '{"app":"Spotify","title":"Song name","pid":3}';
+  };
+  const s = await sampleActiveWindow({ env: {}, platform: 'darwin', run, allow: ['Revit'] });
+  assert.deepEqual(s, { app: 'Spotify', title: '', pid: 3 });
+  assert.equal(argsSeen.at(-1), '["Revit"]');
+  const fake = await sampleActiveWindow({ env: { GOAT_FAKE_WINDOW: 'Spotify|Song' }, allow: ['Revit'] });
+  assert.equal(fake.title, '');
+});

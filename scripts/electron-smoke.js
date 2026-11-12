@@ -27,6 +27,7 @@ const env = {
   GOAT_FAKE_WINDOW: 'Google Chrome|Forma Build - Issues',
   GOAT_USER: 'e2e-tester',
   GOAT_FAKE_CAPTURE: '1', // tests can't grant Screen Recording
+  GOAT_TRACK_INTERVAL_SEC: '0.2',
 };
 delete env.ELECTRON_RUN_AS_NODE; // see Gotchas: VS Code extension shells set it
 
@@ -159,6 +160,23 @@ try {
     const [chat] = ollama.chats();
     assert.equal(chat.body.messages[1].images.length, 1);
     assert.match(chat.body.messages[1].content, /highlighted this part of the screen \(200×150 points\)/);
+  });
+
+  await check('tracking samples allowlisted windows; stopping shows and approves the timesheet', async () => {
+    await app.evaluate(() => globalThis.__goatTest.setFakeWindow('Revit|ALP-GAM-ZZ-XX-M3-S-0001.rvt'));
+    await app.evaluate(() => globalThis.__goatTest.toggleTracking());
+    await until(() => page.evaluate(() => document.getElementById('goat-cursor').classList.contains('tracking')), 'the red dot');
+    await sleep(1700); // about 8 samples at 0.2 s
+    await app.evaluate(() => globalThis.__goatTest.toggleTracking());
+    await page.waitForSelector('.ts-table', { state: 'visible' });
+    assert.match(await page.locator('.ts-table').innerText(), /ALPHA/);
+    assert.equal(await page.evaluate(() => document.getElementById('goat-cursor').classList.contains('tracking')), false);
+    await page.click('[data-action="approve"]');
+    await until(() => page.evaluate(() => document.querySelector('.ts-status')?.textContent === 'Approved'), 'the approval');
+    const approved = fs.readdirSync(path.join(srv.dataDir, 'timesheets', 'e2e-tester'));
+    assert.equal(approved.length, 1);
+    await page.click('[data-action="close"]');
+    await app.evaluate(() => globalThis.__goatTest.setFakeWindow('Google Chrome|Forma Build - Issues'));
   });
 
   await check('no page errors', async () => {

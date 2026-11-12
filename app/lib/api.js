@@ -45,5 +45,9 @@ export function createApi({ baseUrl, userId, fetchImpl = globalThis.fetch, timeo
     health: () => request('GET', '/api/health', undefined, 3000),
     me: () => request('GET', '/api/me', undefined, 5000),
     saveGuide: (guide) => request('POST', '/api/guides', guide, 10_000),
+    timesheetConfig: () => request('GET', '/api/timesheet/config', undefined, 5000),
+    postActivity: (samples) => request('POST', '/api/activity', { samples }, 10_000),
+    timesheet: (date) => request('GET', `/api/timesheet?date=${encodeURIComponent(date)}`, undefined, 10_000),
+    approveTimesheet: (date) => request('POST', '/api/timesheet/approve', { date }, 10_000),
   };
 }

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, screen, shell, Tray } from 'electron';
+import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, powerMonitor, screen, shell, Tray } from 'electron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sampleActiveWindow } from './lib/active-window.js';
@@ -7,6 +7,7 @@ import { validRegion } from './lib/region.js';
 import { createApi } from './lib/api.js';
 import { getUserId } from './lib/identity.js';
 import { buildGuide, createRecorder } from './lib/recorder.js';
+import { createTracker } from './lib/tracker.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const isMac = process.platform === 'darwin';
@@ -25,6 +26,21 @@ const userId = getUserId();
 const api = createApi({ baseUrl: serverUrl, userId });
 const recorder = createRecorder();
 let lastRecording = null;
+// Timesheet tracking: off until Ctrl+Option+T, after every launch.
+const tracker = createTracker({
+  sample: (allow) => sampleActiveWindow({ timeoutMs: 2500, allow }),
+  send: (samples) => api.postActivity(samples),
+  getConfig: () => api.timesheetConfig(),
+  intervalMs: Math.max(0.1, Number(process.env.GOAT_TRACK_INTERVAL_SEC) || 10) * 1000,
+  idleSec: Number(process.env.GOAT_IDLE_SEC) || 300,
+  idleSeconds: () => powerMonitor.getSystemIdleTime(),
+});
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+function localDate(d = new Date()) {
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+const dateOrToday = (d) => (typeof d === 'string' && DATE.test(d) ? d : localDate());
 
 let win = null;
 let tray = null;
@@ -160,6 +176,27 @@ async function toggleRecording() {
   refreshTray();
 }
 
+// Ctrl+Option+T: start tracking; press again to stop and see today's timesheet.
+async function toggleTracking() {
+  if (!tracker.tracking) {
+    send({ type: 'tracking', on: true }); // the red dot shows at once
+    await tracker.start();
+    log('Tracking on');
+  } else {
+    await tracker.stop();
+    send({ type: 'tracking', on: false });
+    log('Tracking off');
+    await openTimesheet();
+  }
+  refreshTray();
+}
+
+async function openTimesheet() {
+  const timesheet = await api.timesheet(localDate());
+  focusOverlay();
+  send({ type: 'open-timesheet', timesheet });
+}
+
 function captureStep(point) {
   if (!recorder.recording) return;
   const step = recorder.capture(point || screen.getCursorScreenPoint());
@@ -173,6 +210,14 @@ function registerIpc() {
     platform: process.platform,
     hotkeys: { ask: hotkey('G'), record: hotkey('R'), capture: hotkey('C'), track: hotkey('T'), voice: hotkey('V') },
   }));
+  ipcMain.handle('goat:timesheet', (event, date) => (fromOverlay(event) ? api.timesheet(dateOrToday(date)) : { error: 'forbidden' }));
+  ipcMain.handle('goat:approve-timesheet', (event, date) => (fromOverlay(event) ? api.approveTimesheet(dateOrToday(date)) : { error: 'forbidden' }));
+  ipcMain.handle('goat:export-csv', async (event, date) => {
+    if (!fromOverlay(event)) return { error: 'forbidden' };
+    const url = `${serverUrl}/api/timesheet.csv?date=${dateOrToday(date)}&user=${encodeURIComponent(userId)}`;
+    if (process.env.GOAT_TEST_HOOKS !== '1') await shell.openExternal(url);
+    return { ok: true, url };
+  });
   ipcMain.handle('goat:save-guide', async (event, form) => {
     if (!fromOverlay(event)) return { error: 'forbidden', message: 'Unknown sender.' };
     const { width, height } = screen.getPrimaryDisplay().size;
@@ -212,7 +257,7 @@ function registerIpc() {
 }
 
 function registerHotkeys() {
-  const keys = { G: () => openAsk('hotkey'), R: () => toggleRecording() };
+  const keys = { G: () => openAsk('hotkey'), R: () => toggleRecording(), T: () => toggleTracking() };
   for (const [key, run] of Object.entries(keys)) {
     if (!globalShortcut.register(accelerator(key), run)) console.warn(`[goat] ${hotkey(key)} is already taken by another app.`);
   }
@@ -225,6 +270,10 @@ function trayMenu() {
       ? { label: `Stop recording (${hotkey('R')})`, click: () => toggleRecording() }
       : { label: `Record a guide (${hotkey('R')})`, click: () => toggleRecording() },
     ...(recorder.recording ? [{ label: `Capture step at the mouse (${hotkey('C')})`, click: () => captureStep() }] : []),
+    tracker.tracking
+      ? { label: `Stop tracking (${hotkey('T')})`, click: () => toggleTracking() }
+      : { label: `Start tracking (${hotkey('T')})`, click: () => toggleTracking() },
+    { label: "Today's timesheet", click: () => openTimesheet() },
     { type: 'separator' },
     { label: `Server: ${serverUrl}`, enabled: false },
     { label: `User: ${userId}`, enabled: false },
@@ -265,6 +314,11 @@ if (!app.requestSingleInstanceLock()) {
         toggleRecording: () => toggleRecording(),
         captureStep: (point) => captureStep(point),
         recording: () => ({ recording: recorder.recording, steps: recorder.steps, app: recorder.app }),
+        toggleTracking: () => toggleTracking(),
+        tracking: () => ({ tracking: tracker.tracking, queued: tracker.queued }),
+        setFakeWindow: (value) => {
+          process.env.GOAT_FAKE_WINDOW = value;
+        },
         askContext: () => askContext,
         windowState: () => ({ visible: win.isVisible(), onTop: win.isAlwaysOnTop(), bounds: win.getBounds(), level: windowLevel }),
         // Stop streaming the real mouse and send a fake system cursor position instead.
@@ -274,6 +328,14 @@ if (!app.requestSingleInstanceLock()) {
         },
       };
     }
+  });
+  // Send any queued timesheet samples before quitting.
+  let flushedOnQuit = false;
+  app.on('before-quit', (event) => {
+    if (flushedOnQuit || !tracker.tracking) return;
+    event.preventDefault();
+    flushedOnQuit = true;
+    tracker.stop().finally(() => app.quit());
   });
   app.on('will-quit', () => globalShortcut.unregisterAll());
   app.on('window-all-closed', () => app.quit());

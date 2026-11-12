@@ -1,9 +1,10 @@
 import express from 'express';
 import { HttpError } from './errors.js';
 import { guideSummary, publicGuide } from './guides/store.js';
+import { mountTimesheet } from './timesheet/routes.js';
 import { sanitizeUserId } from './users.js';
 
-export function createApp({ config, guides, docs, llm, users, assist, mcp, logger = console }) {
+export function createApp({ config, guides, docs, llm, users, assist, mcp, projects, activity, logger = console }) {
   const app = express();
   app.disable('x-powered-by');
   app.use(express.json({ limit: '5mb' }));
@@ -57,6 +58,8 @@ export function createApp({ config, guides, docs, llm, users, assist, mcp, logge
     const { question, context, image } = req.body || {};
     res.json(await assist({ question, context, image, tier: users.tier(req.userId), userId: req.userId }));
   });
+
+  if (projects && activity) mountTimesheet(app, { projects, activity });
 
   app.use('/api', (req) => {
     throw new HttpError(404, 'not_found', `No route for ${req.method} ${req.originalUrl}.`);

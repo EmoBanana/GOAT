@@ -5,7 +5,8 @@ const USER_ID = /^[A-Za-z0-9._@-]{1,80}$/;
 
 export function sanitizeUserId(raw) {
   const id = typeof raw === 'string' ? raw.trim() : '';
-  return USER_ID.test(id) ? id : 'anonymous';
+  // Ids name folders under data/, so "." and ".." are out.
+  return USER_ID.test(id) && !/^\.+$/.test(id) ? id : 'anonymous';
 }
 
 // data/users.json maps id -> { id, proUntil }. Pro means proUntil is in the future.
