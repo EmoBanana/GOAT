@@ -32,13 +32,15 @@ body {
 /* Blue cursor: a 0x0 box placed exactly on the tip. */
 .cursor { position: fixed; left: 0; top: 0; width: 0; height: 0; z-index: 30; opacity: 0; will-change: transform; }
 .cursor.ready { opacity: 1; }
+/* The kopitiam cup points with the left edge of its rim, at (3, 9) in its 28 pt box (cursor-art.js).
+   It brings its own hard shadow; a light one only lifts it off busy screens. */
 .cursor svg {
   position: absolute;
   left: -3px;
-  top: -2px;
+  top: -9px;
   overflow: visible;
-  transform-origin: 3px 2px;
-  filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.45)) drop-shadow(0 0 0.5px rgba(0, 0, 0, 0.35));
+  transform-origin: 3px 9px;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.2));
 }
 .cursor.thinking svg { animation: goat-pulse 1.2s ease-in-out infinite; }
 @keyframes goat-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.12); } }
