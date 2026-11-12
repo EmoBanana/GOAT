@@ -6,6 +6,10 @@ import path from 'node:path';
 // GOAT_SERVER_URL still wins, so one build can be pointed at a test server.
 export const DEFAULT_SERVER_URL = 'http://127.0.0.1:8402';
 
+// What a packaged GOAT says when its server can't be reached. The people using it don't run the
+// server, so it says the server is down rather than where it is or how to start it.
+export const SERVER_OFFLINE = "GOAT's server isn't online right now.";
+
 // An http(s) origin, or '' for anything else. Paths are dropped: the API client asks for
 // absolute paths like /api/assist.
 export function cleanServerUrl(value) {

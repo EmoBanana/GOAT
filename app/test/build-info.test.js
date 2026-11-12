@@ -5,7 +5,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { closedPortUrl } from '../../server/test/helpers/mock-ollama.js';
 import { createApi } from '../lib/api.js';
-import { cleanServerUrl, DEFAULT_SERVER_URL, isLocalServer, readBuildInfo, resolveServerUrl, whereItRuns } from '../lib/build-info.js';
+import { cleanServerUrl, DEFAULT_SERVER_URL, isLocalServer, readBuildInfo, resolveServerUrl, SERVER_OFFLINE, whereItRuns } from '../lib/build-info.js';
 
 function appDir(pkg) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'goat-build-'));
@@ -46,10 +46,9 @@ test('answers say "running on this laptop" only when the server is local', () =>
   assert.equal(whereItRuns('http://192.168.1.20:8402'), 'on 192.168.1.20:8402');
 });
 
-test('a packaged app explains an unreachable server without suggesting npm start', async () => {
-  const api = createApi({ baseUrl: await closedPortUrl(), userId: 'x', unreachableHint: 'Check that it is running and that this Mac can reach it.' });
+test('a packaged app says its server isn’t online, without an address or npm start', async () => {
+  const api = createApi({ baseUrl: await closedPortUrl(), userId: 'x', unreachableMessage: SERVER_OFFLINE });
   const reply = await api.health();
   assert.equal(reply.error, 'server_unreachable');
-  assert.match(reply.message, /^Can't reach the GOAT server at http:\/\/127\.0\.0\.1:\d+\. Check that it is running/);
-  assert.doesNotMatch(reply.message, /npm start/);
+  assert.equal(reply.message, "GOAT's server isn't online right now.");
 });
