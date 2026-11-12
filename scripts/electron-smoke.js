@@ -29,6 +29,9 @@ const env = {
   GOAT_USER: 'e2e-tester',
   GOAT_FAKE_CAPTURE: '1', // tests can't grant Screen Recording
   GOAT_TRACK_INTERVAL_SEC: '0.2',
+  // The app reads the Mac's real idle time: after 5 minutes without input every sample was idle
+  // and the timesheet came back empty.
+  GOAT_IDLE_SEC: '86400',
 };
 delete env.ELECTRON_RUN_AS_NODE; // see Gotchas: VS Code extension shells set it
 
