@@ -894,7 +894,7 @@ await check("voice: GOAT's own voice plays when the server sends one, its words 
   await setReply('speak', undefined);
 });
 
-await check('voice: "What\'s MCP?" plays its clip on a cloudy screen first, and the answer is spoken once it ends', async () => {
+await check('voice: "What\'s MCP?" plays its clip on a foggy screen first, and the answer is spoken once it ends', async () => {
   // Playwright's Chromium can't play the real H.264 clip; a short WAV plays through the same <video>.
   const clipFile = path.join(artifacts, 'clip-test.wav');
   fs.writeFileSync(clipFile, toneWav(4000)); // long enough for the clouds to roll in first
@@ -907,11 +907,7 @@ await check('voice: "What\'s MCP?" plays its clip on a cloudy screen first, and 
       if (!c) return { shown: false };
       const v = c.querySelector('video');
       const f = c.querySelector('.clip-frame').getBoundingClientRect();
-      const sides = [...c.querySelectorAll('.clip-cloud:not(.far)')].map((e) => {
-        const r = e.getBoundingClientRect();
-        return r.left + r.width / 2 < innerWidth / 2 ? 'left' : 'right';
-      });
-      return { shown: true, playing: !v.paused, cx: f.left + f.width / 2, cy: f.top + f.height / 2, sides: sides.join(','), fog: Boolean(c.querySelector('.clip-fog')) };
+      return { shown: true, playing: !v.paused, cx: f.left + f.width / 2, cy: f.top + f.height / 2, fog: getComputedStyle(c).backgroundImage.includes('gradient'), puffs: c.querySelectorAll('.clip-cloud').length };
     });
   const askAloud = (q) =>
     page.evaluate((question) => {
@@ -925,11 +921,11 @@ await check('voice: "What\'s MCP?" plays its clip on a cloudy screen first, and 
     const s = await clip();
     return s.shown && s.playing;
   }, 'the clip to play');
-  await page.evaluate(() => Promise.all([...document.querySelectorAll('.clip-frame, .clip-cloud')].flatMap((e) => e.getAnimations()).map((a) => a.finished)));
+  await page.evaluate(() => Promise.all(document.querySelector('.clip-frame').getAnimations().map((a) => a.finished)));
   const shown = await clip();
   assert.ok(Math.abs(shown.cx - 720) < 2 && Math.abs(shown.cy - 450) < 2, `in the middle of the screen: ${JSON.stringify(shown)}`);
-  assert.equal(shown.sides, 'left,left,left,left,right,right,right,right', 'banks of clouds on both sides');
-  assert.equal(shown.fog, true);
+  assert.equal(shown.fog, true, 'the screen is fogged over');
+  assert.equal(shown.puffs, 4, 'soft haze drifting in the fog');
   assert.deepEqual((await calls('clipFor')).map((c) => c.args), [["What's MCP?"]]);
   await until(async () => (await calls('ask')).length === 1, 'the ask, sent at once');
   await shot('ui-22-clip');
@@ -941,7 +937,7 @@ await check('voice: "What\'s MCP?" plays its clip on a cloudy screen first, and 
   assert.match((await bubble()).text, /Photos are the evidence/, 'and its words show as it is said');
   await page.evaluate(() => window.__asked);
 
-  // A click on the clouds skips to the answer.
+  // A click on the fog skips to the answer.
   await spySpeech();
   await askAloud('What is MCP?');
   await until(async () => (await clip()).shown, 'the clip');
